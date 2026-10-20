@@ -18,11 +18,11 @@ def cbz(path: Path) -> Path:
     return path
 
 
-def run(lines: str, *args: Path, expected: int = 0) -> str:
+def run(lines: str, *args: Path, expected: int = 0, magazine: bool = False) -> str:
     with tempfile.TemporaryDirectory(prefix="bookconv-work-") as work:
         env = dict(os.environ, TEMP=work, TMP=work)
         result = subprocess.run(
-            ["cmd.exe", "/d", "/c", str(ROOT / "Convert-Manga.bat"), *map(str, args)],
+            ["cmd.exe", "/d", "/c", str(ROOT / ("Convert-Manga-Magazine.bat" if magazine else "Convert-Manga.bat")), *map(str, args)],
             input=lines, capture_output=True, text=True, encoding="utf-8",
             errors="strict", timeout=120, check=False, env=env,
         )
@@ -79,7 +79,7 @@ def main() -> None:
         # Literal shell characters in a pasted path must never execute.
         literal = cbz(folder / '$(throw 1); 雑誌 & 特集.cbz')
         before = sha256(literal)
-        text = run(f'"{literal}"\n\nq\n')
+        text = run(f'"{literal}"\n\nq\n', magazine=True)
         assert sha256(literal) == before == sha256(output(literal)), text
         for p, digest in originals.items():
             assert sha256(p) == digest, f'Input modified: {p}'
