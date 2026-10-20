@@ -32,7 +32,7 @@ def main() -> None:
         for name, color in zip(['1.png', '2.png', '10.png'], colors):
             (images / name).write_bytes(png(COLORS[color]))
         hashes = {p: sha256(p) for p in root.rglob('*') if p.is_file()}
-        text = run(f'"{spine}" "{cover}" "{unsafe}" "{images}"\nq\n', magazine=True)
+        text = run(f'"{spine}" "{cover}" "{unsafe}" "{images}"\n\nq\n', magazine=True)
         assert '成功: 3 / 上限超過: 0 / スキップ: 0 / 失敗: 1' in text, text
         assert_pages(output(spine, 'spine.cbz'), ['001.png', '002.png'], [png(COLORS[c]) for c in ['blue', 'red']])
         assert_pages(output(cover, 'cover.cbz'), ['001.png', '002.png'], [png(COLORS[c]) for c in ['cover', 'green']])
