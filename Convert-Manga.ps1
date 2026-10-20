@@ -1078,8 +1078,10 @@ function Invoke-MangaBatch {
 
 try {
     if ($DroppedPaths.Count -gt 0) { Invoke-MangaBatch -Paths $DroppedPaths }
+    $modeLabel = if ($Magazine) { '雑誌・単巻' } else { '漫画' }
+    Write-Host ("BookConverter / {0}モード" -f $modeLabel) -ForegroundColor Cyan
     while ($true) {
-        $line = Read-MangaResponse '[待機中] 次の漫画の絶対パスを入力（ドロップ/貼り付け後Enter、終了 q/exit）'
+        $line = Read-MangaResponse ('[待機中] 次の{0}の絶対パスを入力（ドロップ/貼り付け後Enter、終了 q/exit）' -f $modeLabel)
         if ($null -eq $line -or $line.Trim() -in @('q', 'exit')) { break }
         try { $paths = @(Split-MangaInput -Line $line) }
         catch {
