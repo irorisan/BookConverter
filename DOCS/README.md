@@ -17,6 +17,7 @@ BookConverterの仕様・開発資料の入口です。
 ## 資料
 
 - [開発・改修計画](./DEVELOPMENT_PLAN.md) — 現在の正本。決定事項、既存仕様、CUIの要求、工程、テスト・CI、受け入れ条件。
+- [Phase 1/2 — コード取り込み・進捗表示](./PHASE1_2_PROGRESS.md) — PowerShellソースのGit管理、工程/進捗表示、Windowsのテスト・受け入れ条件。
 - [Phase 0 — 現行ツールの動作基準化](./PHASE0_BASELINE.md) — 静的に確認した仕様、合成フィクスチャとWindows実機の未確認事項。
 - [AGENTS.md](../AGENTS.md) — Docs First、TDD、最小実装・KISS、最終整合性、PRとCIのルール。
 
