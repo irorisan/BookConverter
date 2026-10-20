@@ -46,6 +46,32 @@ def main() -> None:
         assert all(sha256(p) == digest for p, digest in originals.items())
         assert sha256(out / "星の話 - 星の話 外伝.cbz") == originals[unnamed_a]
 
+        # Website-flavored filenames ending in _10 are manga volumes, not
+        # unnumbered standalone items. A chosen series name must apply to both
+        # conventional v18 and _10 naming in the same batch.
+        site10 = cbz(folder / "Manga-Zip.info_10.cbz")
+        doro18 = cbz(folder / "ドロヘドロ v18.cbz")
+        fullwidth03a = cbz(folder / "作品名_０３ａ.cbz")
+        for p in (site10, doro18, fullwidth03a):
+            originals[p] = sha256(p)
+        text = run_bat(
+            "Convert-Manga.bat", "ドロヘドロ\n\nq\n",
+            site10, doro18, fullwidth03a,
+        )
+        assert text.count("シリーズの出力作品名") == 1, text
+        assert "成功: 3 / 上限超過: 0 / スキップ: 0 / 失敗: 0" in text, text
+        for p, expected_name in (
+            (site10, "ドロヘドロ v10.cbz"),
+            (doro18, "ドロヘドロ v18.cbz"),
+            (fullwidth03a, "ドロヘドロ v03a.cbz"),
+        ):
+            assert sha256(out / expected_name) == originals[p], (expected_name, text)
+
+        # Magazine mode leaves _10 untouched and does not reinterpret it as v10.
+        text = run_bat("Convert-Manga-Magazine.bat", "\nq\n", site10)
+        assert "シリーズの出力作品名" not in text, text
+        assert sha256(out / "Manga-Zip.info_10.cbz") == originals[site10], text
+
         # Dedicated magazine BAT never guesses volumes and never prompts a
         # common series title, even if a volume-looking token is present.
         text = run_bat("Convert-Manga-Magazine.bat", f'\n"{weekly}"\n\nq\n', monthly)
@@ -69,7 +95,7 @@ def main() -> None:
         assert sha256(out / weekly.name) == originals[weekly]
         assert all(sha256(p) == digest for p, digest in originals.items())
         assert not list(folder.rglob(".manga_*.tmp"))
-    print("PASS: distinct manga/magazine BATs, unknown volumes, continuous batches, hashes")
+    print("PASS: separate BAT modes, underscore volume suffix, batches and original hashes")
 
 
 if __name__ == "__main__":
