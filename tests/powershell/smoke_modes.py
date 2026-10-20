@@ -55,7 +55,7 @@ def main() -> None:
         for p in (site10, doro18, fullwidth03a):
             originals[p] = sha256(p)
         text = run_bat(
-            "Convert-Manga.bat", "ドロヘドロ\\n\\nq\\n",
+            "Convert-Manga.bat", "ドロヘドロ\n\nq\n",
             site10, doro18, fullwidth03a,
         )
         assert text.count("シリーズの出力作品名") == 1, text
@@ -68,7 +68,7 @@ def main() -> None:
             assert sha256(out / expected_name) == originals[p], (expected_name, text)
 
         # Magazine mode leaves _10 untouched and does not reinterpret it as v10.
-        text = run_bat("Convert-Manga-Magazine.bat", "\\nq\\n", site10)
+        text = run_bat("Convert-Manga-Magazine.bat", "\nq\n", site10)
         assert "シリーズの出力作品名" not in text, text
         assert sha256(out / "Manga-Zip.info_10.cbz") == originals[site10], text
 
