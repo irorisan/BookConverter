@@ -1,27 +1,29 @@
 # DOCS — BookConverter
 
-BookConverter の設計・開発資料の入口です。
+BookConverterの仕様・開発資料の入口です。
 
-## 計画書
+## 現行方針（2026-10-21更新）
 
-- [開発・移植計画](./DEVELOPMENT_PLAN.md) — 技術構成、現行PowerShell/BAT版の仕様、EPUB/AVIF/CBZ処理の移植方針、GUI、Rust構造、フェーズ、テスト・CI、リスク、受け入れ基準。
-- [Phase 0 — 旧版の動作基準化](./PHASE0_BASELINE.md) — 合成CBZ/EPUB回帰ケース、厳密な60MiB境界、Windows実機の未実測事項と検証手順。
+**既存のPowerShell + BATのCUIを維持し、進捗・処理状況・結果サマリーの見やすさを改善する。**
 
-## 開発エージェント・実装ルール
+- PowerShellでファイル判定・命名・変換・進捗表示を実装する。
+- 引き続き `avifenc` / `dwebp` と既存のアーカイブ展開方法を利用する。
+- BATへのファイル/フォルダのドラッグ＆ドロップと作品名の一括入力を維持する。
+- **変換完了後もCUIは開いたまま**。次の漫画を同じコンソールにドロップ（対応ホストのみ）またはパスを貼り付け、Enterで確定すると**別作品の新しいバッチ**を開始する。シリーズ名・進捗・集計は毎回リセットし、`q` / `exit`で終了する。
+- コンソールへのファイルドロップの可否はWindows Terminal / Console Hostで実機確認する。非対応時もパス貼り付けで繰り返し利用できる。
+- 無骨で実用的なコンソール表示を優先。**Rust/Tauri/Reactへの移植と豪華なGUI・EXE化は現在の計画から除外**する。
+- 変換結果・原本保護・容量判定・品質探索・命名仕様は勝手に変更しない。
 
-- [AGENTS.md](../AGENTS.md) — 資料ファースト、TDD、KISS、後方互換・データ移行を行わない方針、最終確認、PR/CIの必須手順。
-- アプリの合意済み仕様と実装順は[開発・移植計画](./DEVELOPMENT_PLAN.md)を参照。仕様変更時は先にドキュメントとテストを更新する。
+## 資料
 
-## 決定済み
-
-- Tauri 2 + React + TypeScript + Tailwind CSS + shadcn/ui + Rust。
-- Windows向けのモダンなデスクトップGUI。
-- AVIFは当面 `avifenc`、WebPデコードは必要時に `dwebp`。libavif直接連携は後日の検討。
-- 最終的にはPowerShell/BAT依存を廃止。
-- 現行挙動の再現を先に行い、最適化は別途計測・判断。
+- [開発・改修計画](./DEVELOPMENT_PLAN.md) — 現在の正本。決定事項、既存仕様、CUIの要求、工程、テスト・CI、受け入れ条件。
+- [Phase 0 — 現行ツールの動作基準化](./PHASE0_BASELINE.md) — 静的に確認した仕様、合成フィクスチャとWindows実機の未確認事項。
+- [AGENTS.md](../AGENTS.md) — Docs First、TDD、最小実装・KISS、最終整合性、PRとCIのルール。
 
 ## 現在の状態
 
-**Phase 0の静的基準と合成フィクスチャを準備**しています。Windows上で旧版の実変換・時間・画質を計測する作業は未実施です。Tauriアプリ本体とRust/Reactのテスト・ビルドCIも未実装です。現行の`quality`は**文書と合成フィクスチャの検査のみ**であり、変換処理やWindowsビルドの成功を意味しません。Phase 1でアプリ向け検査を追加します。
+現行PowerShellツールは**会話添付のスタンドアロンZIP**が基準。リポジトリには現時点で計画資料と合成CBZ/EPUBフィクスチャテストがあり、変換本体のPowerShellコードは**まだ登録されていない**。次段階でコードの置き場所とWindows実機での検証方法を整理する。
 
-**参照した元資料**: 2026-10-20提供の `Convert-Manga-AVIF-Quality70-EPUB-Standalone.zip` 内の `Convert-Manga.ps1` / `Convert-Manga-Epub.ps1` / `Convert-Manga.bat` / `README.md`（コード静的確認）。元の配布ZIPや同梱の第三者バイナリはこのリポジトリに追加していません。
+現在のGitHub Actions `quality` は、**DOCSの基本整合性とPython製の合成テスト入力を検証する暫定CI**。変換そのものやWindows CUIの正常動作を証明するものではない。PowerShell本体を追加した段階で、適切なWindows/Pester等のチェックを導入する。
+
+**元資料**: 2026-10-20提供の `Convert-Manga-AVIF-Quality70-EPUB-Standalone.zip` 内の `Convert-Manga.ps1`、`Convert-Manga-Epub.ps1`、`Convert-Manga.bat`、README。元の配布ZIP・第三者バイナリはリポジトリに追加していない。
