@@ -1,4 +1,5 @@
 ﻿param(
+    [switch]$Magazine,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$DroppedPaths
 )
@@ -98,17 +99,19 @@ function Add-MangaItem {
         [IO.Path]::GetFileNameWithoutExtension($InputItem.Name)
     }
 
-    $info = Get-VolumeInfo -BaseName $base -ParentTitle $ParentTitle
-    if ($null -eq $info -and [string]::IsNullOrWhiteSpace($ParentTitle)) {
-        # When dropping a stand-alone v100b.cbz, infer its title from the parent folder.
-        $fallbackTitle = if ($InputItem.PSIsContainer) { $InputItem.Parent.Name } else { $InputItem.Directory.Name }
-        $info = Get-VolumeInfo -BaseName $base -ParentTitle $fallbackTitle
+    # The BAT entrance, not the volume-token heuristic, selects the mode.
+    $info = $null
+    if (-not $script:Magazine) {
+        $info = Get-VolumeInfo -BaseName $base -ParentTitle $ParentTitle
+        if ($null -eq $info -and [string]::IsNullOrWhiteSpace($ParentTitle)) {
+            # A filename containing only v100b may obtain its title from its parent.
+            $fallbackTitle = if ($InputItem.PSIsContainer) { $InputItem.Parent.Name } else { $InputItem.Directory.Name }
+            $info = Get-VolumeInfo -BaseName $base -ParentTitle $fallbackTitle
+        }
     }
-    $isStandalone = $null -eq $info
-    if ($isStandalone) {
-        # Files without volume tokens are one-shot books or magazines.
-        # Do NOT replace their title with ParentTitle (a library/series directory).
-        # A bare directory is only treated as one-shot if it directly has pages.
+    $isStandalone = [bool]$script:Magazine
+    if ($null -eq $info) {
+        # Bare folders are books only if pages are direct children.
         if ($InputItem.PSIsContainer -and -not (Test-StandaloneImageFolder -Folder $InputItem)) {
             return $false
         }
@@ -123,6 +126,7 @@ function Add-MangaItem {
     if ($Seen.Add($full)) {
         $Items.Add([pscustomobject]@{
             Title       = $info.Title
+            SourceBase  = $base.Trim()
             Volume      = $info.Volume
             IsStandalone = [bool]$isStandalone
             FullName    = $full
@@ -796,7 +800,10 @@ function Invoke-MangaBatch {
     Write-Host "`n読み込み: $($Items.Count)件" -ForegroundColor Cyan
     $Items | Sort-Object Title, @{ Expression = { Get-NaturalSortKey -Name $_.Volume } } | ForEach-Object {
         if ($_.IsStandalone) {
-            Write-Host "  $($_.Title) [単巻・雑誌 / 巻数なし] -> $($_.OutputDir)"
+            Write-Host "  $($_.Title) [雑誌・単巻 / 元名維持] -> $($_.OutputDir)"
+        }
+        elseif ([string]::IsNullOrWhiteSpace($_.Volume)) {
+            Write-Host "  $($_.Title) [漫画 / 巻数未検出・元名保持] -> $($_.OutputDir)"
         }
         else {
             Write-Host "  $($_.Title) [$($_.Volume)巻] -> $($_.OutputDir)"
@@ -814,10 +821,10 @@ function Invoke-MangaBatch {
     $standaloneItems = @($Items | Where-Object { $_.IsStandalone })
     $newTitle = ''
     Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "まとめて変換: $($Items.Count)件（シリーズ: $($seriesItems.Count) / 単巻・雑誌: $($standaloneItems.Count)）"
+    Write-Host "まとめて変換: $($Items.Count)件（漫画: $($seriesItems.Count) / 雑誌・単巻: $($standaloneItems.Count)）"
 
     if ($seriesItems.Count -gt 0) {
-        # Preserve the existing once-per-batch title prompt for numbered manga.
+        # Manga mode always prompts once, even if every filename lacks a volume token.
         $originalTitles = @($seriesItems | ForEach-Object { $_.Title } | Select-Object -Unique)
         if ($originalTitles.Count -gt 1) {
             Write-Warning '複数のシリーズ名が見つかりました。シリーズ巻はすべて同じ作品名に統一します。'
@@ -833,11 +840,11 @@ function Invoke-MangaBatch {
             Write-Host "無効な作品名です: $newTitle" -ForegroundColor Red
             return
         }
-        Write-Host "シリーズ$($seriesItems.Count)件の出力名に「$newTitle」を適用します。" -ForegroundColor Cyan
+        Write-Host "漫画$($seriesItems.Count)件の出力名に「$newTitle」を適用します（巻数不明は元名も保持）。" -ForegroundColor Cyan
     }
     if ($standaloneItems.Count -gt 0) {
         # Stand-alone files retain independent names; never apply one title to the batch.
-        Write-Host "単巻・雑誌$($standaloneItems.Count)件は元の名前を保持し、巻数を付けずに保存します。" -ForegroundColor Cyan
+        Write-Host "雑誌・単巻$($standaloneItems.Count)件は元のファイル名を保持して保存します。" -ForegroundColor Cyan
     }
 
     # 60MiB以下の巻は無変換。超える巻は70MiB以下で最高品質を目指す。
@@ -869,7 +876,12 @@ function Invoke-MangaBatch {
     $completedItems = 0
     foreach ($item in ($Items | Sort-Object @{ Expression = { Get-NaturalSortKey -Name $_.Volume } }, FullName)) {
         if ($item.IsStandalone) {
-            $outputName = "$($item.Title).cbz"
+            $outputName = "$($item.SourceBase).cbz"
+        }
+        elseif ([string]::IsNullOrWhiteSpace($item.Volume)) {
+            # Keep unknown-volume inputs distinct and do not invent an ordinal.
+            $suffix = if ($item.SourceBase -ceq $newTitle) { '' } else { " - $($item.SourceBase)" }
+            $outputName = "$newTitle$suffix.cbz"
         }
         else {
             $vol = Get-VolumeLabel -Raw $item.Volume
