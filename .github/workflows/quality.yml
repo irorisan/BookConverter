@@ -23,7 +23,7 @@ jobs:
           import re
 
           docs = Path("DOCS")
-          expected = [docs / "README.md", docs / "DEVELOPMENT_PLAN.md"]
+          expected = [docs / "README.md", docs / "DEVELOPMENT_PLAN.md", docs / "PHASE0_BASELINE.md"]
           for file in expected:
               assert file.is_file(), f"Missing required document: {file}"
               content = file.read_text(encoding="utf-8")
@@ -35,3 +35,6 @@ jobs:
           assert "Tauri 2" in expected[1].read_text(encoding="utf-8")
           assert "Rust" in expected[1].read_text(encoding="utf-8")
           print("Planning documents validated.")
+
+      - name: Validate synthetic baseline fixtures
+        run: python -m unittest discover -s tests/baseline -p 'test_*.py' -v
