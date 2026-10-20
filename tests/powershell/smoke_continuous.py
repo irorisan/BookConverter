@@ -19,11 +19,14 @@ def cbz(path: Path) -> Path:
 
 
 def run(lines: str, *args: Path, expected: int = 0) -> str:
-    result = subprocess.run(
-        ["cmd.exe", "/d", "/c", str(ROOT / "Convert-Manga.bat"), *map(str, args)],
-        input=lines, capture_output=True, text=True, encoding="utf-8",
-        errors="strict", timeout=120, check=False,
-    )
+    with tempfile.TemporaryDirectory(prefix="bookconv-work-") as work:
+        env = dict(os.environ, TEMP=work, TMP=work)
+        result = subprocess.run(
+            ["cmd.exe", "/d", "/c", str(ROOT / "Convert-Manga.bat"), *map(str, args)],
+            input=lines, capture_output=True, text=True, encoding="utf-8",
+            errors="strict", timeout=120, check=False, env=env,
+        )
+        assert not list(Path(work).glob('MangaCbz_*')), (result.stdout, 'Work directory remains')
     assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
     return result.stdout + result.stderr
 

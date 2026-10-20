@@ -1,4 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) { throw 'Requires Windows PowerShell 5.1' }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $root 'Convert-Manga-Input.ps1')
 function Assert-Paths {
