@@ -6,6 +6,11 @@ BookConverter の設計・開発資料の入口です。
 
 - [開発・移植計画](./DEVELOPMENT_PLAN.md) — 技術構成、現行PowerShell/BAT版の仕様、EPUB/AVIF/CBZ処理の移植方針、GUI、Rust構造、フェーズ、テスト・CI、リスク、受け入れ基準。
 
+## 開発エージェント・実装ルール
+
+- [AGENTS.md](../AGENTS.md) — 資料ファースト、TDD、KISS、後方互換・データ移行を行わない方針、最終確認、PR/CIの必須手順。
+- アプリの合意済み仕様と実装順は[開発・移植計画](./DEVELOPMENT_PLAN.md)を参照。仕様変更時は先にドキュメントとテストを更新する。
+
 ## 決定済み
 
 - Tauri 2 + React + TypeScript + Tailwind CSS + shadcn/ui + Rust。
