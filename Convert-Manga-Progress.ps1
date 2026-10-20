@@ -1,4 +1,4 @@
-# Display helpers kept separate to allow lightweight tests without starting conversion.
+﻿# Display helpers kept separate to allow lightweight tests without starting conversion.
 function Get-MangaProgressPercent {
     param([int]$Completed, [int]$Total)
     if ($Total -le 0) { return 0 }
