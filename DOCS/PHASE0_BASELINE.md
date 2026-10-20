@@ -2,8 +2,8 @@
 
 > 作成日: 2026-10-20 / 状態: **静的仕様確認済み・Windows実機実行は未確認**  
 > 対象原本: 会話添付 `Convert-Manga-AVIF-Quality70-EPUB-Standalone.zip`  
-> 参照: [開発・移植計画](./DEVELOPMENT_PLAN.md)  
-> 次段階: 既存PowerShell CUIの進捗表示設計・テスト。現在の方針は [開発・改修計画](./DEVELOPMENT_PLAN.md) を参照
+> 参照: [開発・改修計画](./DEVELOPMENT_PLAN.md)  
+> 次段階: 既存PowerShell CUIの進捗表示設計・テスト
 
 ## 1. 目的と範囲
 
