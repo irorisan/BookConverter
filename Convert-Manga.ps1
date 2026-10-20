@@ -51,6 +51,12 @@ function Get-VolumeInfo {
         $title = $Matches['title'].Trim()
         $volumeToken = $Matches['suffix']
     }
+    elseif ($BaseName -match "^(?<title>.+)_(?<suffix>$numberPattern)$") {
+        # Site-suffixed manga names such as Manga-Zip.info_10 use '_10'
+        # as the volume marker. Only the manga BAT invokes this parser.
+        $title = $Matches['title'].Trim()
+        $volumeToken = $Matches['suffix']
+    }
     else { return $null }
 
     if ([string]::IsNullOrWhiteSpace($title)) { return $null }
