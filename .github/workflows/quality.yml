@@ -56,3 +56,7 @@ jobs:
       - name: Smoke test continuous batches through BAT in PowerShell 5.1
         shell: pwsh
         run: python tests/powershell/smoke_continuous.py
+
+      - name: Smoke test EPUB, ordering, naming and size regressions
+        shell: pwsh
+        run: python tests/powershell/smoke_regressions.py
