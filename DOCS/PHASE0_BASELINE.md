@@ -3,7 +3,7 @@
 > 作成日: 2026-10-20 / 状態: **静的仕様確認済み・Windows実機実行は未確認**  
 > 対象原本: 会話添付 `Convert-Manga-AVIF-Quality70-EPUB-Standalone.zip`  
 > 参照: [開発・改修計画](./DEVELOPMENT_PLAN.md)  
-> 次段階: 既存PowerShell CUIの進捗表示設計・テスト
+> 次段階: 既存PowerShell CUIの進捗表示・変換後の次入力待機ループの設計とテスト
 
 ## 1. 目的と範囲
 
@@ -110,5 +110,6 @@ python tests/baseline/generate_fixtures.py --out tests/baseline/_generated --lar
 - 生成済み合成データの**期待値**をPowerShellの命名・出力保護・閾値・EPUB動作の回帰テストに活用する。
 - 現行スクリプトの工程（入力検出、品質探索、変換、圧縮、検証）を調べ、コンソール進捗を表示する箇所を特定する。
 - **まずDOCSを更新し、テストで現在の問題を表現してから**、PowerShell標準の進捗表示・終了サマリーを必要最小限で追加する。
+- 変換完了後に入力待機へ戻り、**同じCUIで別作品を続けて処理**できることを回帰テストに追加する。初回BAT引数/引数なし起動、引用符付き日本語パス、前回バッチからの状態初期化、エラー後の再試行、`q`/`exit`での終了を検証する。コンソールのドロップ対応はWindows実機で別途確認する。
 - `quality` にWindows/PowerShell用のパース・単体・スモークテストを段階的に導入する。現行のPythonテストは合成入力の検査のみ。
 - Windowsで未実測の項目は残存リスクとしてPRに明記する。Phase 0の静的基準とフィクスチャは用意できているが、**Windowsでの実測結果はまだない**。
