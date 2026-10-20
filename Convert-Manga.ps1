@@ -1015,8 +1015,6 @@ function Invoke-MangaBatch {
                     Write-Warning '対象のJPEG/PNG/WebPがないため、AVIFの圧縮品質調整はできません。画像をそのままCBZに格納します。'
                 }
             }
-            $storedBytes = [long]0
-            foreach ($entry in $entries) { $storedBytes += [long]$entry.Length }
 
             Write-MangaStage -Name $outputName -Stage "CBZ書き込み"
             Write-MangaStoredZip -Path $tempCbz -Entries $entries

@@ -36,3 +36,6 @@ BAT引数ありはそのまま最初のバッチ、引数なしはパス待機�
 ### Windows PowerShell 5.1のZIP Store整合
 
 quality #30では連続変換スモーク・入力テストは成功したが、追加回帰でEPUB出力のZIPメソッドがStore（0）ではないことを検出した。.NET Frameworkの`ZipArchive` + `NoCompression`はメソッドDeflate（8）となるため、既存資料のStore契約を満たしていなかった。期待値を緩めず、完成CBZの新規書き込みをストリーミングのStoreライターへ置き換える。画像バイト列・順序・名前とCBZ原本コピー経路は変えない。UTF-8ファイル名、CRC32、ZIP64を扱い、書き込みは私有の一時CBZだけで行う。既存の再読み込み検証と上書きしない最終Moveを維持する。
+
+- Windows CI quality [#31](https://github.com/irorisan/BookConverter/actions/runs/39486634257)（実装HEAD `0ffe1d1`）で全自動テスト成功。最終資料・未使用コード整理後も最新HEADで再確認する。
+- ZIP64は65,535エントリ境界を.NET Frameworkで再読込して確認。4GiB超の実データ境界は未実測。CRC32/Storeと画像バイト列はPythonのZIP読込でも検証している。
