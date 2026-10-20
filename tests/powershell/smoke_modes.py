@@ -11,8 +11,8 @@ from smoke_continuous import cbz, output, run
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="bookconv-mode-") as temp:
         root = Path(temp) / "日本語 空白 & 文字"
-        first = cbz(root / "誤記タイトル.cbz")
-        second = cbz(root / "別名の漫画.cbz")
+        first = cbz(root / "01_誤記タイトル.cbz")
+        second = cbz(root / "02_別名の漫画.cbz")
         before = {p: sha256(p) for p in (first, second)}
 
         # Manga mode must NEVER silently treat files with no volume as magazines.
