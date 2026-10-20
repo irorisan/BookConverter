@@ -23,7 +23,7 @@ jobs:
           import re
 
           docs = Path("DOCS")
-          expected = [docs / "README.md", docs / "DEVELOPMENT_PLAN.md", docs / "PHASE0_BASELINE.md"]
+          expected = [Path("AGENTS.md"), docs / "README.md", docs / "DEVELOPMENT_PLAN.md", docs / "PHASE0_BASELINE.md"]
           for file in expected:
               assert file.is_file(), f"Missing required document: {file}"
               content = file.read_text(encoding="utf-8")
@@ -32,8 +32,10 @@ jobs:
               for target in re.findall(r"\[[^\]]+\]\((\.?\.?/[^)#]+)(?:#[^)]+)?\)", content):
                   destination = (file.parent / target).resolve()
                   assert destination.is_file(), f"Broken Markdown link: {file} -> {target}"
-          assert "Tauri 2" in expected[1].read_text(encoding="utf-8")
-          assert "Rust" in expected[1].read_text(encoding="utf-8")
+          plan = (docs / "DEVELOPMENT_PLAN.md").read_text(encoding="utf-8")
+          assert "PowerShell" in plan, "Missing current PowerShell direction"
+          assert "CUI" in plan, "Missing current CUI direction"
+          assert "TDD" in plan, "Missing project development cycle"
           print("Planning documents validated.")
 
       - name: Validate synthetic baseline fixtures
