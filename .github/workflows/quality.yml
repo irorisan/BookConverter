@@ -60,3 +60,7 @@ jobs:
       - name: Smoke test EPUB, ordering, naming and size regressions
         shell: pwsh
         run: python tests/powershell/smoke_regressions.py
+
+      - name: Validate ZIP Store writer ZIP64 boundary and output protection
+        shell: pwsh
+        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-zip.ps1

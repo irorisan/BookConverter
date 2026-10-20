@@ -67,7 +67,7 @@ Windows向けの漫画CBZ変換ツールです。漫画の巻・単巻作品・�
 
 ## 使い方
 
-1. ZIPを展開し、`Convert-Manga.bat`・`Convert-Manga.ps1`・`Convert-Manga-Epub.ps1`・`Convert-Manga-Progress.ps1`・`Convert-Manga-Input.ps1` を同じフォルダに置きます（ZIPを展開したまま使用）。
+1. ZIPを展開し、`Convert-Manga.bat`・`Convert-Manga.ps1`・`Convert-Manga-Epub.ps1`・`Convert-Manga-Progress.ps1`・`Convert-Manga-Input.ps1`・`Convert-Manga-Zip.ps1` を同じフォルダに置きます（ZIPを展開したまま使用）。
 2. 漫画のEPUB・CBZ・ZIP・RARや巻フォルダなどをBATへドラッグ＆ドロップします（複数指定可）。BATを引数なしで開く場合は、待機プロンプトへ絶対パスを貼り付けてEnter。空白を含む複数パスはそれぞれダブルクォートで囲みます。
 3. **巻数ありのシリーズが含まれるときだけ**作品名を1回入力。Enterなら検出した作品名を採用し、シリーズ巻に適用します。単巻・雑誌は元の名前をそのまま使います。
 4. **並列数**を入力。Enterなら自動設定です。
@@ -113,7 +113,7 @@ ONE PIECE/
 ## 必要なもの
 
 - Windows PowerShell 5.1（Windows標準）
-- WinRAR（ZIP / CBZ / RARを開くため。EPUB単独やフォルダ入力だけなら不要）
+- WinRAR（ZIP / CBZ / RARを展開する場合。60MiB以下のCBZ原本コピー・EPUB・フォルダ入力では不要）
 - AOMedia公式 `avifenc.exe`：最初のAVIF変換時に公式リリースから自動取得。自動取得できない場合は `tools\avifenc.exe` に配置。
 - Google公式 `dwebp.exe`：元CBZにWebP画像がある場合だけ必要。自動取得が失敗した場合は `tools\dwebp.exe` に配置。
 
@@ -123,4 +123,4 @@ ONE PIECE/
 
 - JPEGやWebP→AVIFは**非可逆の再エンコード**です。画質が改善するわけではありません。Kavita・Mihonでの表紙とページ表示、細い文字・トーンを最初の1巻で確認してください。
 - 数値表記は「MiB」（1MiB = 1,048,576バイト）です。Windowsのファイル容量表示に近い単位です。
-- **Windows実機での実変換は未検証**です。配布ZIPの内容とスクリプトを検査しています。初めに少数ページのEPUB・1巻で確認してください。
+- **WinRAR・avifenc・dwebpを使うWindows実機E2Eは未検証**です。CIではPowerShell 5.1のBAT連続変換・小型CBZのSHA-256・EPUB/spine・自然順・命名・容量境界を検証します。実機ドロップも未確認です。[実機の確認手順](DOCS/PHASE3_4_CONTINUOUS.md) に従い、初めに少数ページ・1巻で確認してください。

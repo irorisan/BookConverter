@@ -2,9 +2,3 @@
 tests/baseline/_generated/
 __pycache__/
 *.py[cod]
-
-# Planned application build output
-node_modules/
-dist/
-target/
-src-tauri/target/
