@@ -23,7 +23,7 @@ jobs:
           import re
 
           docs = Path("DOCS")
-          expected = [docs / "README.md", docs / "DEVELOPMENT_PLAN.md"]
+          expected = [docs / "README.md", docs / "DEVELOPMENT_PLAN.md", docs / "PHASE0_BASELINE.md"]
           for file in expected:
               assert file.is_file(), f"Missing required document: {file}"
               content = file.read_text(encoding="utf-8")
