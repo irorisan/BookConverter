@@ -17,13 +17,14 @@ BookConverterの仕様・開発資料の入口です。
 ## 資料
 
 - [開発・改修計画](./DEVELOPMENT_PLAN.md) — 現在の正本。決定事項、既存仕様、CUIの要求、工程、テスト・CI、受け入れ条件。
+- [Phase 1/2 — コード取り込み・進捗表示](./PHASE1_2_PROGRESS.md) — PowerShellソースのGit管理、工程/進捗表示、Windowsのテスト・受け入れ条件。
 - [Phase 0 — 現行ツールの動作基準化](./PHASE0_BASELINE.md) — 静的に確認した仕様、合成フィクスチャとWindows実機の未確認事項。
 - [AGENTS.md](../AGENTS.md) — Docs First、TDD、最小実装・KISS、最終整合性、PRとCIのルール。
 
 ## 現在の状態
 
-現行PowerShellツールは**会話添付のスタンドアロンZIP**が基準。リポジトリには現時点で計画資料と合成CBZ/EPUBフィクスチャテストがあり、変換本体のPowerShellコードは**まだ登録されていない**。次段階でコードの置き場所とWindows実機での検証方法を整理する。
+**Phase 1のPowerShell/BATソースをリポジトリに登録し、Phase 2の進捗表示を実装したPRを検証中**。元のソースは2026-10-20提供のスタンドアロンZIPを基準とし、`avifenc.exe`等の第三者バイナリは含まない。連続変換の次入力待機はPhase 3として未実装。
 
-現在のGitHub Actions `quality` は、**DOCSの基本整合性とPython製の合成テスト入力を検証する暫定CI**。変換そのものやWindows CUIの正常動作を証明するものではない。PowerShell本体を追加した段階で、適切なWindows/Pester等のチェックを導入する。
+PR内の`quality`は**Windows上でDOCS検証、合成入力テスト、PowerShell 5.1の構文・進捗ユニットテスト、小型CBZの実変換スモーク**を行う。AVIFエンコード・EPUB/RAR・実際の大量漫画・コンソールドロップ操作は自動テスト対象外で、別途Windows実機で確認する。
 
 **元資料**: 2026-10-20提供の `Convert-Manga-AVIF-Quality70-EPUB-Standalone.zip` 内の `Convert-Manga.ps1`、`Convert-Manga-Epub.ps1`、`Convert-Manga.bat`、README。元の配布ZIP・第三者バイナリはリポジトリに追加していない。

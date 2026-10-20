@@ -9,7 +9,7 @@ on:
 jobs:
   quality:
     name: quality
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       contents: read
     steps:
@@ -23,7 +23,7 @@ jobs:
           import re
 
           docs = Path("DOCS")
-          expected = [Path("AGENTS.md"), docs / "README.md", docs / "DEVELOPMENT_PLAN.md", docs / "PHASE0_BASELINE.md"]
+          expected = [Path("AGENTS.md"), docs / "README.md", docs / "DEVELOPMENT_PLAN.md", docs / "PHASE0_BASELINE.md", docs / "PHASE1_2_PROGRESS.md"]
           for file in expected:
               assert file.is_file(), f"Missing required document: {file}"
               content = file.read_text(encoding="utf-8")
@@ -40,3 +40,11 @@ jobs:
 
       - name: Validate synthetic baseline fixtures
         run: python -m unittest discover -s tests/baseline -p 'test_*.py' -v
+
+      - name: Validate PowerShell 5.1 syntax and progress helpers
+        shell: pwsh
+        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-progress.ps1
+
+      - name: Smoke test unchanged small CBZ copy
+        shell: pwsh
+        run: python tests/powershell/smoke_cbz.py
