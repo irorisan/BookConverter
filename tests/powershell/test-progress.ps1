@@ -11,6 +11,12 @@ foreach ($filename in $sourceFiles) {
 }
 if (-not (Test-Path (Join-Path $root 'Convert-Manga.bat'))) { throw 'Missing BAT' }
 if (-not (Test-Path (Join-Path $root 'README.md'))) { throw 'Missing README' }
+$mainSource = Get-Content -LiteralPath (Join-Path $root 'Convert-Manga.ps1') -Raw -Encoding UTF8
+foreach ($needle in @('Write-MangaOverallProgress', 'Write-MangaStage',
+        'Write-Progress -Id 2 -ParentId 1', '上限超過: $oversized')) {
+    if (-not $mainSource.Contains($needle)) { throw "Missing progress integration: $needle" }
+}
+
 . (Join-Path $root 'Convert-Manga-Progress.ps1')
 
 function Assert-Eq {
