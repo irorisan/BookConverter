@@ -67,7 +67,7 @@ Windows向けの漫画CBZ変換ツールです。漫画の巻・単巻作品・�
 
 ## 使い方
 
-1. ZIPを展開し、`Convert-Manga.bat`・`Convert-Manga.ps1`・`Convert-Manga-Epub.ps1` を同じフォルダに置きます（ZIPを展開したまま使用）。
+1. ZIPを展開し、`Convert-Manga.bat`・`Convert-Manga.ps1`・`Convert-Manga-Epub.ps1`・`Convert-Manga-Progress.ps1` を同じフォルダに置きます（ZIPを展開したまま使用）。
 2. 漫画のEPUB・CBZ・ZIP・RARや巻フォルダなどをBATへドラッグ＆ドロップします（複数指定可）。
 3. **巻数ありのシリーズが含まれるときだけ**作品名を1回入力。Enterなら検出した作品名を採用し、シリーズ巻に適用します。単巻・雑誌は元の名前をそのまま使います。
 4. **並列数**を入力。Enterなら自動設定です。
