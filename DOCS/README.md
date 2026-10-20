@@ -23,8 +23,8 @@ BookConverterの仕様・開発資料の入口です。
 
 ## 現在の状態
 
-**Phase 1のPowerShell/BATソースをリポジトリに登録し、Phase 2の進捗表示を実装したPRを検証中**。元のソースは2026-10-20提供のスタンドアロンZIPを基準とし、`avifenc.exe`等の第三者バイナリは含まない。連続変換の次入力待機はPhase 3として未実装。
+**Phase 1・2はPR #5でマージ済み。Phase 3・4は連続変換と検証を追加**。元のソースは2026-10-20提供のスタンドアロンZIPを基準とし、`avifenc.exe`等の第三者バイナリは含まない。連続変換・検証の仕様と実機手順は [Phase 3・4](./PHASE3_4_CONTINUOUS.md) を参照。
 
-PR内の`quality`は**Windows上でDOCS検証、合成入力テスト、PowerShell 5.1の構文・進捗ユニットテスト、小型CBZの実変換スモーク**を行う。AVIFエンコード・EPUB/RAR・実際の大量漫画・コンソールドロップ操作は自動テスト対象外で、別途Windows実機で確認する。
+PR内の`quality`は**Windows上でDOCS検証、合成入力テスト、PowerShell 5.1の構文/BOM/進捗/入力テスト、BAT連続変換、SHA-256、EPUB順序・自然順・命名・容量境界スモーク**を行う。WinRAR・avifenc・dwebpを使うE2E・実際の大量漫画・コンソールドロップ操作は自動テスト対象外で、別途Windows実機で確認する。
 
 **元資料**: 2026-10-20提供の `Convert-Manga-AVIF-Quality70-EPUB-Standalone.zip` 内の `Convert-Manga.ps1`、`Convert-Manga-Epub.ps1`、`Convert-Manga.bat`、README。元の配布ZIP・第三者バイナリはリポジトリに追加していない。

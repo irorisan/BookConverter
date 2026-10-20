@@ -4,6 +4,9 @@
 )
 
 $ErrorActionPreference = 'Stop'
+# Redirected smoke tests and pasted Japanese paths use UTF-8 on both streams.
+[Console]::InputEncoding = New-Object Text.UTF8Encoding($false)
+[Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -12,13 +15,13 @@ $ArchiveExtensions = @('.zip', '.cbz', '.rar', '.epub')
 $OutputFolderName = 'avif変換cbz'
 . (Join-Path $PSScriptRoot 'Convert-Manga-Epub.ps1')
 . (Join-Path $PSScriptRoot 'Convert-Manga-Progress.ps1')
+. (Join-Path $PSScriptRoot 'Convert-Manga-Input.ps1')
+. (Join-Path $PSScriptRoot 'Convert-Manga-Zip.ps1')
 # PowerShell 1MB means 1MiB (1,048,576 bytes).
 $CopyThresholdBytes = [long](60 * 1MB)
 $MaxTargetBytes = [long](70 * 1MB)
 # Quality selection targets 68 MiB: 2 MiB headroom below the 70 MiB limit.
 $SampleSafetyBytes = [long](2 * 1MB)
-$Items = [System.Collections.Generic.List[object]]::new()
-$Seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 
 function Get-VolumeInfo {
     param([string]$BaseName, [string]$ParentTitle = '')
@@ -760,105 +763,111 @@ function Test-SafeTitle {
     return $true
 }
 
-if ($DroppedPaths.Count -eq 0) {
-    Write-Host 'フォルダまたはZIP・CBZ・RAR・EPUBファイルをBATへドラッグしてください。'
-    exit 1
-}
+function Invoke-MangaBatch {
+    param([string[]]$Paths)
 
-foreach ($raw in $DroppedPaths) {
-    try {
-        $path = $raw.Trim('"')
-        $inputItem = Get-Item -LiteralPath $path -ErrorAction Stop
-        if ($inputItem.PSIsContainer) {
-            Scan-Container -Container $inputItem
+    # All mutable batch state lives in this invocation. Detection helpers use
+    # PowerShell's caller scope for Items/Seen; no previous batch survives here.
+    $Items = [System.Collections.Generic.List[object]]::new()
+    $Seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($raw in $Paths) {
+        try {
+            $path = $raw.Trim('"')
+            $inputItem = Get-Item -LiteralPath $path -ErrorAction Stop
+            if ($inputItem.PSIsContainer) {
+                Scan-Container -Container $inputItem
+            }
+            elseif (-not (Add-MangaItem -InputItem $inputItem)) {
+                Write-Warning "対象外（形式・画像の有無を確認）: $($inputItem.FullName)"
+            }
         }
-        elseif (-not (Add-MangaItem -InputItem $inputItem)) {
-            Write-Warning "対象外（形式・画像の有無を確認）: $($inputItem.FullName)"
+        catch {
+            Write-Warning "読み込み失敗: $raw / $($_.Exception.Message)"
         }
     }
-    catch {
-        Write-Warning "読み込み失敗: $raw / $($_.Exception.Message)"
-    }
-}
 
-if ($Items.Count -eq 0) {
-    Write-Host '変換できる漫画・雑誌が見つかりませんでした。'
-    Write-Host '例: ONE PIECE v100.cbz、（１５）.epub、Weekly_Ascii_2026-10-20.epub、Best Selection.epub'
-    exit 1
-}
-
-Write-Host "`n読み込み: $($Items.Count)件" -ForegroundColor Cyan
-$Items | Sort-Object Title, @{ Expression = { Get-NaturalSortKey -Name $_.Volume } } | ForEach-Object {
-    if ($_.IsStandalone) {
-        Write-Host "  $($_.Title) [単巻・雑誌 / 巻数なし] -> $($_.OutputDir)"
+    if ($Items.Count -eq 0) {
+        Write-Host '変換できる漫画・雑誌が見つかりませんでした。'
+        Write-Host '例: ONE PIECE v100.cbz、（１５）.epub、Weekly_Ascii_2026-10-20.epub、Best Selection.epub'
+        return
     }
-    else {
-        Write-Host "  $($_.Title) [$($_.Volume)巻] -> $($_.OutputDir)"
-    }
-}
 
-# WinRAR is only needed for ZIP/CBZ/RAR inputs, not for folders or EPUB.
-$WinRAR = $null
-$success = 0
-$skipped = 0
-$failed = 0
-$oversized = 0
-
-$seriesItems = @($Items | Where-Object { -not $_.IsStandalone })
-$standaloneItems = @($Items | Where-Object { $_.IsStandalone })
-$newTitle = ''
-Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "まとめて変換: $($Items.Count)件（シリーズ: $($seriesItems.Count) / 単巻・雑誌: $($standaloneItems.Count)）"
-
-if ($seriesItems.Count -gt 0) {
-    # Preserve the existing once-per-batch title prompt for numbered manga.
-    $originalTitles = @($seriesItems | ForEach-Object { $_.Title } | Select-Object -Unique)
-    if ($originalTitles.Count -gt 1) {
-        Write-Warning '複数のシリーズ名が見つかりました。シリーズ巻はすべて同じ作品名に統一します。'
-        Write-Host ('検出した元作品名: ' + ($originalTitles -join ' / '))
+    Write-Host "`n読み込み: $($Items.Count)件" -ForegroundColor Cyan
+    $Items | Sort-Object Title, @{ Expression = { Get-NaturalSortKey -Name $_.Volume } } | ForEach-Object {
+        if ($_.IsStandalone) {
+            Write-Host "  $($_.Title) [単巻・雑誌 / 巻数なし] -> $($_.OutputDir)"
+        }
+        else {
+            Write-Host "  $($_.Title) [$($_.Volume)巻] -> $($_.OutputDir)"
+        }
     }
-    $defaultTitle = $seriesItems[0].Title
-    Write-Host "元のシリーズ名: $defaultTitle"
-    $newTitle = Read-Host "シリーズの出力作品名（Enterなら $defaultTitle）"
-    if ([string]::IsNullOrWhiteSpace($newTitle)) { $newTitle = $defaultTitle }
-    $newTitle = $newTitle.Trim()
-    if (-not (Test-SafeTitle -Name $newTitle)) {
-        Write-Host "無効な作品名です: $newTitle" -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "シリーズ$($seriesItems.Count)件の出力名に「$newTitle」を適用します。" -ForegroundColor Cyan
-}
-if ($standaloneItems.Count -gt 0) {
-    # Stand-alone files retain independent names; never apply one title to the batch.
-    Write-Host "単巻・雑誌$($standaloneItems.Count)件は元の名前を保持し、巻数を付けずに保存します。" -ForegroundColor Cyan
-}
 
-# 60MiB以下の巻は無変換。超える巻は70MiB以下で最高品質を目指す。
-Write-Host "`n====== AVIF自動容量調整 ======" -ForegroundColor Cyan
-Write-Host '元ファイルが60MiB以下: 変換なし（CBZならファイルをそのままコピー）'
-Write-Host '60MiB超: 代表12ページ・最大5回試算で68MiBを目安に品質を選択（上限70MiB）'
-Write-Host 'AVIFエンコード速度: -s 6（従来どおり） / 元CBZは保持して avif変換cbz へ出力' 
-$logicalCores = [Environment]::ProcessorCount
-$autoWorkers = [int][Math]::Max(1, [Math]::Min(8, [Math]::Floor($logicalCores / 2)))
-Write-Host "`n====== AVIFの並列処理 ======" -ForegroundColor Cyan
-Write-Host "CPU: $logicalCores 論理コア / 自動設定: $autoWorkers 枚同時"
-while ($true) {
-    $workerInput = (Read-Host "並列数 [1-16]（Enterで自動: $autoWorkers）").Trim()
-    if ($workerInput -eq '') { $workers = $autoWorkers; break }
-    $candidate = 0
-    if ([int]::TryParse($workerInput, [ref]$candidate) -and $candidate -ge 1 -and $candidate -le 16) {
-        $workers = $candidate
-        break
+    # WinRAR is only needed for ZIP/CBZ/RAR inputs, not for folders or EPUB.
+    $WinRAR = $null
+    $success = 0
+    $skipped = 0
+    $failed = 0
+    $oversized = 0
+
+    $seriesItems = @($Items | Where-Object { -not $_.IsStandalone })
+    $standaloneItems = @($Items | Where-Object { $_.IsStandalone })
+    $newTitle = ''
+    Write-Host "`n========================================" -ForegroundColor Cyan
+    Write-Host "まとめて変換: $($Items.Count)件（シリーズ: $($seriesItems.Count) / 単巻・雑誌: $($standaloneItems.Count)）"
+
+    if ($seriesItems.Count -gt 0) {
+        # Preserve the existing once-per-batch title prompt for numbered manga.
+        $originalTitles = @($seriesItems | ForEach-Object { $_.Title } | Select-Object -Unique)
+        if ($originalTitles.Count -gt 1) {
+            Write-Warning '複数のシリーズ名が見つかりました。シリーズ巻はすべて同じ作品名に統一します。'
+            Write-Host ('検出した元作品名: ' + ($originalTitles -join ' / '))
+        }
+        $defaultTitle = $seriesItems[0].Title
+        Write-Host "元のシリーズ名: $defaultTitle"
+        $newTitle = Read-MangaResponse "シリーズの出力作品名（Enterなら $defaultTitle）"
+        if ($null -eq $newTitle) { return }
+        if ([string]::IsNullOrWhiteSpace($newTitle)) { $newTitle = $defaultTitle }
+        $newTitle = $newTitle.Trim()
+        if (-not (Test-SafeTitle -Name $newTitle)) {
+            Write-Host "無効な作品名です: $newTitle" -ForegroundColor Red
+            return
+        }
+        Write-Host "シリーズ$($seriesItems.Count)件の出力名に「$newTitle」を適用します。" -ForegroundColor Cyan
     }
-    Write-Host '1～16の整数かEnterを入力してください。' -ForegroundColor Yellow
-}
-$encoder = $null
-$decoder = $null
-# If both v100 and v100b are dropped together, both normalize to v100.cbz.
-# Prefer the first (naturally sorted) input and skip subsequent collisions.
-$plannedOutputs = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-$completedItems = 0
-foreach ($item in ($Items | Sort-Object @{ Expression = { Get-NaturalSortKey -Name $_.Volume } }, FullName)) {
+    if ($standaloneItems.Count -gt 0) {
+        # Stand-alone files retain independent names; never apply one title to the batch.
+        Write-Host "単巻・雑誌$($standaloneItems.Count)件は元の名前を保持し、巻数を付けずに保存します。" -ForegroundColor Cyan
+    }
+
+    # 60MiB以下の巻は無変換。超える巻は70MiB以下で最高品質を目指す。
+    Write-Host "`n====== AVIF自動容量調整 ======" -ForegroundColor Cyan
+    Write-Host '元ファイルが60MiB以下: 変換なし（CBZならファイルをそのままコピー）'
+    Write-Host '60MiB超: 代表12ページ・最大5回試算で68MiBを目安に品質を選択（上限70MiB）'
+    Write-Host 'AVIFエンコード速度: -s 6（従来どおり） / 元CBZは保持して avif変換cbz へ出力'
+    $logicalCores = [Environment]::ProcessorCount
+    $autoWorkers = [int][Math]::Max(1, [Math]::Min(8, [Math]::Floor($logicalCores / 2)))
+    Write-Host "`n====== AVIFの並列処理 ======" -ForegroundColor Cyan
+    Write-Host "CPU: $logicalCores 論理コア / 自動設定: $autoWorkers 枚同時"
+    while ($true) {
+        $workerInput = Read-MangaResponse "並列数 [1-16]（Enterで自動: $autoWorkers）"
+        if ($null -eq $workerInput) { return }
+        $workerInput = $workerInput.Trim()
+        if ($workerInput -eq '') { $workers = $autoWorkers; break }
+        $candidate = 0
+        if ([int]::TryParse($workerInput, [ref]$candidate) -and $candidate -ge 1 -and $candidate -le 16) {
+            $workers = $candidate
+            break
+        }
+        Write-Host '1～16の整数かEnterを入力してください。' -ForegroundColor Yellow
+    }
+    $encoder = $null
+    $decoder = $null
+    # If both v100 and v100b are dropped together, both normalize to v100.cbz.
+    # Prefer the first (naturally sorted) input and skip subsequent collisions.
+    $plannedOutputs = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $completedItems = 0
+    foreach ($item in ($Items | Sort-Object @{ Expression = { Get-NaturalSortKey -Name $_.Volume } }, FullName)) {
         if ($item.IsStandalone) {
             $outputName = "$($item.Title).cbz"
         }
@@ -889,7 +898,6 @@ foreach ($item in ($Items | Sort-Object @{ Expression = { Get-NaturalSortKey -Na
 
         $workDir = Join-Path ([IO.Path]::GetTempPath()) ("MangaCbz_" + [Guid]::NewGuid().ToString('N'))
         $tempCbz = Join-Path $destinationDir ('.manga_' + [Guid]::NewGuid().ToString('N') + '.tmp')
-        $zip = $null
         try {
             New-Item -ItemType Directory -Path $workDir -Force | Out-Null
             New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
@@ -1007,24 +1015,9 @@ foreach ($item in ($Items | Sort-Object @{ Expression = { Get-NaturalSortKey -Na
                     Write-Warning '対象のJPEG/PNG/WebPがないため、AVIFの圧縮品質調整はできません。画像をそのままCBZに格納します。'
                 }
             }
-            $storedBytes = [long]0
-            foreach ($entry in $entries) { $storedBytes += [long]$entry.Length }
 
             Write-MangaStage -Name $outputName -Stage "CBZ書き込み"
-            $zip = [IO.Compression.ZipFile]::Open(
-                $tempCbz, [IO.Compression.ZipArchiveMode]::Create
-            )
-            foreach ($entry in $entries) {
-                # AVIF/JPEG等はすでに圧縮済み。二重圧縮せずStoreで格納する。
-                [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                    $zip,
-                    $entry.SourcePath,
-                    $entry.EntryName,
-                    [IO.Compression.CompressionLevel]::NoCompression
-                ) | Out-Null
-            }
-            $zip.Dispose()
-            $zip = $null
+            Write-MangaStoredZip -Path $tempCbz -Entries $entries
 
             Write-MangaStage -Name $outputName -Stage "CBZ検証"
             $check = [IO.Compression.ZipFile]::OpenRead($tempCbz)
@@ -1057,17 +1050,43 @@ foreach ($item in ($Items | Sort-Object @{ Expression = { Get-NaturalSortKey -Na
             $failed++
         }
         finally {
-            if ($null -ne $zip) { $zip.Dispose() }
-            Remove-Item -LiteralPath $tempCbz -Force -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue
+            # Failed cleanup is fatal: never accept another batch with live work.
+            if (Test-Path -LiteralPath $tempCbz) { Remove-Item -LiteralPath $tempCbz -Force -ErrorAction Stop }
+            if (Test-Path -LiteralPath $workDir) { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction Stop }
             $completedItems++
             Write-MangaOverallProgress -Completed $completedItems -Total $Items.Count -Name $outputName
         }
+    }
+
+    Write-MangaOverallProgress -Completed $completedItems -Total $Items.Count -Done
+    Write-Host "`n========== 完了 ==========" -ForegroundColor Cyan
+    Write-Host "成功: $success / 上限超過: $oversized / スキップ: $skipped / 失敗: $failed"
+    Write-Host '元のフォルダ・ZIP・RAR・CBZは削除していません。'
 }
 
-Write-MangaOverallProgress -Completed $completedItems -Total $Items.Count -Done
-Write-Host "`n========== 完了 ==========" -ForegroundColor Cyan
-Write-Host "成功: $success / 上限超過: $oversized / スキップ: $skipped / 失敗: $failed"
-Write-Host '元のフォルダ・ZIP・RAR・CBZは削除していません。'
-if ($failed -gt 0) { exit 1 }
+try {
+    if ($DroppedPaths.Count -gt 0) { Invoke-MangaBatch -Paths $DroppedPaths }
+    while ($true) {
+        $line = Read-MangaResponse '[待機中] 次の漫画の絶対パスを入力（ドロップ/貼り付け後Enter、終了 q/exit）'
+        if ($null -eq $line -or $line.Trim() -in @('q', 'exit')) { break }
+        try { $paths = @(Split-MangaInput -Line $line) }
+        catch {
+            Write-Warning $_.Exception.Message
+            continue
+        }
+        if ($paths.Count -eq 0) {
+            Write-Host 'パスを入力してください。多数ファイルは親フォルダを指定できます。'
+            continue
+        }
+        Invoke-MangaBatch -Paths $paths
+    }
+}
+catch {
+    Write-Warning "安全に継続できないため終了します: $($_.Exception.Message)"
+    exit 1
+}
+finally {
+    Write-Progress -Id 2 -ParentId 1 -Activity 'BookConverter' -Completed
+    Write-MangaOverallProgress -Completed 0 -Total 0 -Done
+}
 exit 0
