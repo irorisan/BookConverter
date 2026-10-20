@@ -16,6 +16,6 @@ BookConverter の設計・開発資料の入口です。
 
 ## 現在の状態
 
-**計画のみ**。Tauriアプリ本体、`quality` CI、テストは未実装です。実装完了やCI成功を示す文書ではありません。
+**計画のみ**。Tauriアプリ本体とアプリ向けテスト・ビルドCIは未実装です。`quality` は現在 **DOCSの存在・基本形式・リンクだけを検証する暫定ワークフロー**です。アプリの動作やWindowsビルド成功を示すものではありません。Phase 1でテスト・ビルドチェックを拡張します。
 
 **参照した元資料**: 2026-10-20提供の `Convert-Manga-AVIF-Quality70-EPUB-Standalone.zip` 内の `Convert-Manga.ps1` / `Convert-Manga-Epub.ps1` / `Convert-Manga.bat` / `README.md`（コード静的確認）。元の配布ZIPや同梱の第三者バイナリはこのリポジトリに追加していません。
