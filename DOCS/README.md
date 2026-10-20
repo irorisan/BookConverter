@@ -5,6 +5,7 @@ BookConverter の設計・開発資料の入口です。
 ## 計画書
 
 - [開発・移植計画](./DEVELOPMENT_PLAN.md) — 技術構成、現行PowerShell/BAT版の仕様、EPUB/AVIF/CBZ処理の移植方針、GUI、Rust構造、フェーズ、テスト・CI、リスク、受け入れ基準。
+- [Phase 0 — 旧版の動作基準化](./PHASE0_BASELINE.md) — 合成CBZ/EPUB回帰ケース、厳密な60MiB境界、Windows実機の未実測事項と検証手順。
 
 ## 開発エージェント・実装ルール
 
@@ -21,6 +22,6 @@ BookConverter の設計・開発資料の入口です。
 
 ## 現在の状態
 
-**計画のみ**。Tauriアプリ本体とアプリ向けテスト・ビルドCIは未実装です。`quality` は現在 **DOCSの存在・基本形式・リンクだけを検証する暫定ワークフロー**です。アプリの動作やWindowsビルド成功を示すものではありません。Phase 1でテスト・ビルドチェックを拡張します。
+**Phase 0の静的基準と合成フィクスチャを準備**しています。Windows上で旧版の実変換・時間・画質を計測する作業は未実施です。Tauriアプリ本体とRust/Reactのテスト・ビルドCIも未実装です。現行の`quality`は**文書と合成フィクスチャの検査のみ**であり、変換処理やWindowsビルドの成功を意味しません。Phase 1でアプリ向け検査を追加します。
 
 **参照した元資料**: 2026-10-20提供の `Convert-Manga-AVIF-Quality70-EPUB-Standalone.zip` 内の `Convert-Manga.ps1` / `Convert-Manga-Epub.ps1` / `Convert-Manga.bat` / `README.md`（コード静的確認）。元の配布ZIPや同梱の第三者バイナリはこのリポジトリに追加していません。
