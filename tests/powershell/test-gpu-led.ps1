@@ -66,6 +66,7 @@ try{
     Assert ($cal.Quality -eq 50) 'Calibration did not select the first size-compatible CPU quality'
     Assert (@($script:probeProgress | Where-Object {$_.Unit -eq '試行' -and $_.Completed -eq 2 -and $_.Total -eq 3}).Count -eq 1) 'CPU calibration iteration progress missing'
     Assert ($script:probeProgress[-1].Done) 'CPU calibration progress not closed after short search'
+    Assert (@($script:fakeCalls | Where-Object {$_.Kind -eq 'calibrate'}).Count -eq 2) 'CPU calibration must use only two rounds here'
     $script:probeProgress.Clear()
     $script:scenario='q40'
     $script:fakeCalls.Clear()
@@ -77,7 +78,6 @@ try{
     $script:probeProgress.Clear()
     $script:fakeCalls.Clear()
     Assert (@($cal.Cache).Count -eq 3) 'Expected three CPU calibration pages'
-    Assert (@($script:fakeCalls | Where-Object {$_.Kind -eq 'calibrate'}).Count -eq 2) 'CPU calibration must use only two rounds here'
     Assert (@($cal.Cache | Where-Object {$_.EncodedBy -ne 'Cpu'}).Count -eq 0) 'CPU calibration cache backend missing'
     Assert (@($entries | Where-Object {$_.SourcePath -notmatch '^original_'}).Count -eq 0) 'Calibration modified original entries'
     $script:HybridCpuQuality=$cal.Quality
