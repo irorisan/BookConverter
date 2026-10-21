@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -44,6 +45,7 @@ def main() -> None:
         assert "[工程]" in result.stdout, "No stage status in console"
         assert "成功: 1" in result.stdout, "No success in summary"
         assert "上限超過: 0" in result.stdout, "No oversized count in summary"
+        assert re.search(r"変換所要時間: \d{2}:\d{2}:\d{2}\.\d", result.stdout), "No elapsed time in summary"
         print("PASS: PowerShell CBZ smoke, SHA-256 retained")
 
 

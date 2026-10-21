@@ -30,6 +30,10 @@ Assert-Eq (Get-MangaProgressPercent -Completed 1 -Total 4) 25 'quarter done'
 Assert-Eq (Get-MangaProgressPercent -Completed 3 -Total 3) 100 'all done'
 Assert-Eq (Get-MangaProgressPercent -Completed 9 -Total 4) 100 'clamp high'
 Assert-Eq (Get-MangaProgressPercent -Completed -1 -Total 4) 0 'clamp low'
+Assert-Eq (Format-MangaElapsed -Duration ([TimeSpan]::FromMilliseconds(0))) '00:00:00.0' 'zero duration'
+Assert-Eq (Format-MangaElapsed -Duration ([TimeSpan]::FromMilliseconds(83456))) '00:01:23.4' 'minute and tenths'
+Assert-Eq (Format-MangaElapsed -Duration ([TimeSpan]::FromMilliseconds(3661857))) '01:01:01.8' 'hours and tenths'
+Assert-Eq (Format-MangaElapsed -Duration ([TimeSpan]::FromHours(27))) '27:00:00.0' 'duration over 24 hours'
 
 $script:progressCalls = [System.Collections.Generic.List[object]]::new()
 function Write-Progress {
