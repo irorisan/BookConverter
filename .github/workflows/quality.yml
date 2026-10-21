@@ -49,6 +49,10 @@ jobs:
           }
           ./tests/powershell/test-runtime.ps1
 
+      - name: Validate GPU-led CPU calibration and selective no-duplicate retries
+        shell: pwsh
+        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-gpu-led.ps1
+
       - name: Validate planning documents
         shell: python
         run: |
