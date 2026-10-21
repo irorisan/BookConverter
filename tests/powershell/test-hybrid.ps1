@@ -96,7 +96,9 @@ public class HybridMock {
     }
     . (Join-Path $repo 'scripts/Convert-Manga-Progress.ps1')
     . (Join-Path $repo 'scripts/Convert-Manga-Zip.ps1')
+    $script:SampleDecodeCalls=0
     function Invoke-GpuVerifyAvifBatch { param([string[]]$Paths,[string]$FFmpeg,[int]$Workers,[string]$CancelFile,[int]$TimeoutSeconds)
+        $script:SampleDecodeCalls++
         foreach ($path in $Paths) { Test-AvifOutput $path }
     }
     $ConversionMode='Hybrid'; $GpuWorkers=12; $CpuWorkers=4
@@ -105,6 +107,13 @@ public class HybridMock {
     $script:EncodePasses=[System.Collections.Generic.List[object]]::new()
     $book=Invoke-AutoSizeAvif -Entries (New-Entries 40) -Encoder $exe -Workers 12 -ScratchDir (Join-Path $temp 'auto') -OutputName 'test' -MaxTargetBytes 70MB -SampleSafetyBytes 2MB
     if (-not $book.UnderLimit -or $book.Entries.Count -ne 40) { throw 'Quality pipeline failed' }
+    $samplePasses=@($script:EncodePasses | Where-Object { $_.Phase -eq 'Sample' })
+    if (-not @($samplePasses | Where-Object { $_.GpuPages -gt 0 }).Count -or
+        -not @($samplePasses | Where-Object { $_.CpuPages -gt 0 }).Count) { throw 'Missing GPU or CPU quality probes' }
+    if ($script:SampleDecodeCalls -ne 0) { throw 'Quality search must defer full AVIF decoding to final validation' }
+    $batchNode=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-MangaBatch'},$true)
+    $finalVerify=@($batchNode.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-GpuVerifyAvifBatch'},$true))
+    if ($finalVerify.Count -eq 0) { throw 'Final per-volume AVIF decode validation must be retained' }
     if (@($script:EncodePasses | Where-Object { $_.Phase -eq 'Full' -and $_.CpuPages -gt 0 }).Count -ne 1) { throw 'Hybrid full conversion was not selected' }
     $zip=Join-Path $temp 'output.cbz'
     Write-MangaStoredZip -Path $zip -Entries $book.Entries
@@ -125,7 +134,7 @@ public class HybridMock {
         $caught=$true
     }
     if (-not $caught) { throw 'Oversized conversion accepted' }
-    Write-Host 'PASS: 250 pages, limits, overlap, order, fallback, retries, cancellation, timeout, GPU, quality pipeline, CBZ, 70MiB rejection'
+    Write-Host 'PASS: 250 pages, limits, overlap, order, fallback, retries, cancellation, timeout, GPU, sample decode deferred, final decode retained, quality pipeline, CBZ, 70MiB rejection'
 } finally {
     Remove-Item Env:HYBRID_FAIL -ErrorAction SilentlyContinue
     Remove-Item Env:HYBRID_CANCEL -ErrorAction SilentlyContinue
