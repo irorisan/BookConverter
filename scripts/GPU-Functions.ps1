@@ -66,8 +66,8 @@ function Get-GpuBatchEncodeArguments {
     return ($parts -join ' ')
 }
 
-# The GPU multi-output path is enabled explicitly for full conversion first;
-# representative quality samples keep the existing single-page path until phase 2.
+# A shared GPU multi-output path for quality samples and full conversion.
+# Temporary benchmark presets choose 1 to 4 independent AVIF outputs per process.
 function Invoke-GpuEncodeBatch {
     param(
         [Parameter(Mandatory=$true)][object[]]$Entries,
