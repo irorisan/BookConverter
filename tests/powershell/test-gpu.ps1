@@ -56,7 +56,7 @@ using System.Diagnostics;
 public static class MockFfmpegVerification {
     public static int Main(string[] args) {
         string dir = Environment.GetEnvironmentVariable("BOOKCONV_VERIFY_LOGDIR");
-        File.WriteAllLines(Path.Combine(dir, Process.GetCurrentProcess().Id.ToString() + ".txt"), args);
+        File.WriteAllLines(Path.Combine(dir, Guid.NewGuid().ToString("N") + ".txt"), args);
         int inputs = 0, maps = 0;
         for (int i = 0; i < args.Length; i++) {
             if (args[i] == "-i") {
@@ -158,7 +158,7 @@ using System.Collections.Generic;
 public static class MockEncode {
     public static int Main(string[] args) {
         string log = Environment.GetEnvironmentVariable("BOOKCONV_ENCODE_LOGDIR");
-        File.WriteAllLines(Path.Combine(log, Process.GetCurrentProcess().Id.ToString() + ".txt"), args);
+        File.WriteAllLines(Path.Combine(log, Guid.NewGuid().ToString("N") + ".txt"), args);
         if (Environment.GetEnvironmentVariable("BOOKCONV_ENCODE_FAIL") == "1") return 15;
         int inputs = 0, maps = 0;
         var outputs = new List<string>();
