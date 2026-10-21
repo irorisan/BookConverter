@@ -157,16 +157,18 @@ function Invoke-HybridEncode {
         throw
     } finally {
         foreach ($job in $running) {
+            $stats[$job.Backend+'Seconds'] += $timer.Elapsed.TotalSeconds-$job.Started
             try { if (-not $job.Process.HasExited) { $job.Process.Kill(); $job.Process.WaitForExit() } }
+            catch { Write-Warning "Encoder cleanup: $_" }
             finally { $job.Process.Dispose() }
         }
         $timer.Stop()
-    $stats.Seconds=$timer.Elapsed.TotalSeconds
-    $stats.GpuIdleSlotSeconds=[Math]::Max(0.0,$GpuWorkers*$stats.Seconds-$stats.GpuSeconds)
-    $stats.CpuIdleSlotSeconds=[Math]::Max(0.0,$cpuLimit*$stats.Seconds-$stats.CpuSeconds)
-    $stats.GpuAverageSeconds=if ($stats.GpuAttempts) { $stats.GpuSeconds/$stats.GpuAttempts } else { 0 }
-    $stats.CpuAverageSeconds=if ($stats.CpuAttempts) { $stats.CpuSeconds/$stats.CpuAttempts } else { 0 }
-    $stats.PagesPerSecond=($stats.GpuPages+$stats.CpuPages)/[Math]::Max(0.000001,$stats.Seconds)
+        $stats.Seconds=$timer.Elapsed.TotalSeconds
+        $stats.GpuIdleSlotSeconds=[Math]::Max(0.0,$GpuWorkers*$stats.Seconds-$stats.GpuSeconds)
+        $stats.CpuIdleSlotSeconds=[Math]::Max(0.0,$cpuLimit*$stats.Seconds-$stats.CpuSeconds)
+        $stats.GpuAverageSeconds=if ($stats.GpuAttempts) { $stats.GpuSeconds/$stats.GpuAttempts } else { 0 }
+        $stats.CpuAverageSeconds=if ($stats.CpuAttempts) { $stats.CpuSeconds/$stats.CpuAttempts } else { 0 }
+        $stats.PagesPerSecond=($stats.GpuPages+$stats.CpuPages)/[Math]::Max(0.000001,$stats.Seconds)
         if (-not $success) { Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
     return [pscustomobject]$stats

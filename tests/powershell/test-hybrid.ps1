@@ -59,6 +59,13 @@ public class HybridMock {
     $env:HYBRID_FAIL = 'gpu'
     $stats = Invoke-HybridEncode -Entries (New-Entries 20).ToArray() -FFmpeg $exe -Avifenc $exe -GpuQuality 75 -CpuQuality 80 -GpuWorkers 12 -CpuWorkers 4 -TempDir (Join-Path $temp 'fallback')
     if ($stats.CpuPages -ne 20 -or $stats.Errors -le 0 -or $stats.Retries -le 0) { throw 'No GPU fallback' }
+    $stats = Invoke-HybridEncode -Entries (New-Entries 8).ToArray() -FFmpeg (Join-Path $temp 'missing.exe') -Avifenc $exe -GpuQuality 75 -CpuQuality 95 -GpuWorkers 12 -CpuWorkers 0 -TempDir (Join-Path $temp 'launch-fallback')
+    if ($stats.CpuPages -ne 8 -or $stats.PeakCpu -ne 1 -or $stats.Errors -ne 8) { throw 'GPU launch fallback must respect one CPU slot in GPU mode' }
+    Remove-Item Env:HYBRID_FAIL -ErrorAction SilentlyContinue
+    $webp=New-Entries 40
+    foreach ($entry in $webp) { $entry.Extension='.webp' }
+    $stats = Invoke-HybridEncode -Entries $webp.ToArray() -FFmpeg $exe -Avifenc $exe -Decoder $exe -GpuQuality 75 -CpuQuality 80 -GpuWorkers 12 -CpuWorkers 4 -TempDir (Join-Path $temp 'webp')
+    if ($stats.GpuPages+$stats.CpuPages -ne 40 -or $stats.PeakTotal -gt 16) { throw 'WebP slot handoff failed' }
     $env:HYBRID_FAIL = 'retry'
     $stats = Invoke-HybridEncode -Entries (New-Entries 4).ToArray() -FFmpeg $exe -Avifenc $exe -GpuQuality 75 -CpuQuality 80 -GpuWorkers 0 -CpuWorkers 4 -TempDir (Join-Path $temp 'retry')
     if ($stats.Retries -ne 4 -or $stats.CpuPages -ne 4) { throw 'CPU retry failed' }

@@ -15,6 +15,7 @@ $scriptPath=Join-Path $PSScriptRoot 'Convert-Manga.ps1'
 . (Join-Path $PSScriptRoot 'GPU-Functions.ps1')
 $ffmpeg=Find-FFmpegNvenc
 $avifenc=Join-Path (Split-Path -Parent $PSScriptRoot) 'tools/avifenc.exe'
+if (-not (Test-Path -LiteralPath $avifenc)) { $avifenc=Join-Path (Split-Path -Parent $PSScriptRoot) 'avifenc.exe' }
 if (-not (Test-Path -LiteralPath $avifenc)) {
     $cmd=Get-Command avifenc.exe -ErrorAction Stop
     $avifenc=$cmd.Source
