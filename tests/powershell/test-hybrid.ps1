@@ -45,10 +45,37 @@ public class HybridMock {
         }
         return ,$list
     }
+    # A deterministic approximately 10% final decode sample, with both encoder backends.
+    $verifyEntries = [System.Collections.Generic.List[object]]::new()
+    for ($i = 0; $i -lt 243; $i++) {
+        $verifyEntries.Add([pscustomobject]@{
+            SourcePath = ('page{0:D3}.avif' -f $i)
+            EncodedBy = $(if ($i -eq 7) { 'Cpu' } else { 'Gpu' })
+        })
+    }
+    $samplePaths = [string[]]@(Select-AvifVerificationSamples -Entries $verifyEntries.ToArray())
+    if ($samplePaths.Count -ne 27 -or @($samplePaths | Select-Object -Unique).Count -ne 27) { throw 'Incorrect sampling rate or duplicate pages' }
+    foreach ($i in (0..24 | ForEach-Object { $_ * 10 }) + @(242,7)) {
+        if ($samplePaths -cnotcontains ('page{0:D3}.avif' -f $i)) { throw "Required sample missing: $i" }
+    }
+    if ((@($samplePaths | Where-Object { $_ -eq 'page007.avif' })).Count -ne 1) { throw 'CPU representative was not included exactly once' }
+    foreach ($count in @(1,2,9,10,11,20)) {
+        $short = @($verifyEntries | Select-Object -First $count)
+        $paths = [string[]]@(Select-AvifVerificationSamples -Entries $short)
+        if ($paths[0] -cne $short[0].SourcePath -or $paths[-1] -cne $short[-1].SourcePath) { throw "Missing first/last for $count pages" }
+        if (@($paths | Select-Object -Unique).Count -ne $paths.Count) { throw "Duplicate short sample for $count" }
+    }
+    $mixed = @([pscustomobject]@{SourcePath='first.jpg'; EncodedBy=''},
+        [pscustomobject]@{SourcePath='already.avif'; EncodedBy=''},
+        [pscustomobject]@{SourcePath='last.avif'; EncodedBy='Cpu'})
+    $mixedPaths = [string[]]@(Select-AvifVerificationSamples -Entries $mixed)
+    if ($mixedPaths.Count -ne 2 -or $mixedPaths[0] -ne 'already.avif' -or $mixedPaths[1] -ne 'last.avif') { throw 'Existing AVIF and non-AVIF filtering failed' }
     $entries = New-Entries 250
     $original = @($entries | ForEach-Object { $_.SourcePath })
     $stats = Invoke-HybridEncode -Entries $entries.ToArray() -FFmpeg $exe -Avifenc $exe -GpuQuality 75 -CpuQuality 80 -GpuWorkers 12 -CpuWorkers 4 -TempDir (Join-Path $temp 'out')
     if ($stats.GpuPages + $stats.CpuPages -ne 250 -or $stats.CpuPages -le 0) { throw 'Lost pages or no CPU work' }
+    if (@($entries | Where-Object { $_.EncodedBy -eq 'Cpu' }).Count -ne $stats.CpuPages -or
+        @($entries | Where-Object { $_.EncodedBy -eq 'Gpu' }).Count -ne $stats.GpuPages) { throw 'Encoder provenance was not recorded correctly' }
     if ($stats.PeakGpu -ne 12 -or $stats.PeakCpu -ne 4 -or $stats.PeakTotal -ne 16) { throw 'Incorrect concurrency' }
     if (@($entries.SourcePath | Select-Object -Unique).Count -ne 250) { throw 'Duplicate outputs' }
     for ($i=0; $i -lt 250; $i++) {
@@ -96,7 +123,9 @@ public class HybridMock {
     }
     . (Join-Path $repo 'scripts/Convert-Manga-Progress.ps1')
     . (Join-Path $repo 'scripts/Convert-Manga-Zip.ps1')
+    $script:SampleDecodeCalls=0
     function Invoke-GpuVerifyAvifBatch { param([string[]]$Paths,[string]$FFmpeg,[int]$Workers,[string]$CancelFile,[int]$TimeoutSeconds)
+        $script:SampleDecodeCalls++
         foreach ($path in $Paths) { Test-AvifOutput $path }
     }
     $ConversionMode='Hybrid'; $GpuWorkers=12; $CpuWorkers=4
@@ -105,7 +134,20 @@ public class HybridMock {
     $script:EncodePasses=[System.Collections.Generic.List[object]]::new()
     $book=Invoke-AutoSizeAvif -Entries (New-Entries 40) -Encoder $exe -Workers 12 -ScratchDir (Join-Path $temp 'auto') -OutputName 'test' -MaxTargetBytes 70MB -SampleSafetyBytes 2MB
     if (-not $book.UnderLimit -or $book.Entries.Count -ne 40) { throw 'Quality pipeline failed' }
+    $samplePasses=@($script:EncodePasses | Where-Object { $_.Phase -eq 'Sample' })
+    if (-not @($samplePasses | Where-Object { $_.GpuPages -gt 0 }).Count -or
+        -not @($samplePasses | Where-Object { $_.CpuPages -gt 0 }).Count) { throw 'Missing GPU or CPU quality probes' }
+    if ($script:SampleDecodeCalls -ne 0) { throw 'Quality search must defer full AVIF decoding to final validation' }
+    $batchNode=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-MangaBatch'},$true)
+    $finalVerify=@($batchNode.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-GpuVerifyAvifBatch'},$true))
+    if ($finalVerify.Count -eq 0) { throw 'Final per-volume AVIF decode validation must be retained' }
+    $sampleCommands=@($batchNode.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Select-AvifVerificationSamples'},$true))
+    if ($sampleCommands.Count -ne 1) { throw 'Final validation must use sample selection' }
     if (@($script:EncodePasses | Where-Object { $_.Phase -eq 'Full' -and $_.CpuPages -gt 0 }).Count -ne 1) { throw 'Hybrid full conversion was not selected' }
+    if (@($book.Entries | Where-Object { $_.EncodedBy -eq 'Cpu' }).Count -eq 0 -or
+        @($book.Entries | Where-Object { $_.EncodedBy -eq 'Gpu' }).Count -eq 0) { throw 'Full conversion lost encoder provenance' }
+    $finalSamples=[string[]]@(Select-AvifVerificationSamples -Entries $book.Entries.ToArray())
+    if ($finalSamples.Count -lt 2 -or @($finalSamples | Where-Object { $_ -match 'page_' }).Count -eq 0) { throw 'Unexpected final sample list' }
     $zip=Join-Path $temp 'output.cbz'
     Write-MangaStoredZip -Path $zip -Entries $book.Entries
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -125,7 +167,7 @@ public class HybridMock {
         $caught=$true
     }
     if (-not $caught) { throw 'Oversized conversion accepted' }
-    Write-Host 'PASS: 250 pages, limits, overlap, order, fallback, retries, cancellation, timeout, GPU, quality pipeline, CBZ, 70MiB rejection'
+    Write-Host 'PASS: 250 pages, limits, overlap, order, fallback, retries, cancellation, timeout, GPU, sample decode deferred, final decode retained, quality pipeline, CBZ, 70MiB rejection'
 } finally {
     Remove-Item Env:HYBRID_FAIL -ErrorAction SilentlyContinue
     Remove-Item Env:HYBRID_CANCEL -ErrorAction SilentlyContinue
