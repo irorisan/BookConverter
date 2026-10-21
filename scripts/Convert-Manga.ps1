@@ -1237,7 +1237,7 @@ function Invoke-MangaBatch {
             finally { $check.Dispose() }
 
             # 一時CBZは出力先と同じディレクトリに作成。既存ファイルを上書きしない。
-            if ($ConversionMode -in @('GPU','Hybrid') -and $shouldCompress -and (Get-Item -LiteralPath $tempCbz).Length -gt $MaxTargetBytes) {
+            if ($ConversionMode -in @('GPU','Hybrid') -and $shouldCompress -and ([IO.FileInfo]::new($tempCbz)).Length -gt $MaxTargetBytes) {
                 throw 'Final CBZ exceeds 70MiB; no output committed'
             }
             if ($ConversionMode -in @('GPU','Hybrid') -and $CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'Conversion cancelled before commit' }

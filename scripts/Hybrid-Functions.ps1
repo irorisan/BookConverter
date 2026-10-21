@@ -162,8 +162,8 @@ function Invoke-HybridEncode {
         }
         $timer.Stop()
     $stats.Seconds=$timer.Elapsed.TotalSeconds
-    $stats.GpuIdleSlotSeconds=[Math]::Max(0,$GpuWorkers*$stats.Seconds-$stats.GpuSeconds)
-    $stats.CpuIdleSlotSeconds=[Math]::Max(0,$cpuLimit*$stats.Seconds-$stats.CpuSeconds)
+    $stats.GpuIdleSlotSeconds=[Math]::Max(0.0,$GpuWorkers*$stats.Seconds-$stats.GpuSeconds)
+    $stats.CpuIdleSlotSeconds=[Math]::Max(0.0,$cpuLimit*$stats.Seconds-$stats.CpuSeconds)
     $stats.GpuAverageSeconds=if ($stats.GpuAttempts) { $stats.GpuSeconds/$stats.GpuAttempts } else { 0 }
     $stats.CpuAverageSeconds=if ($stats.CpuAttempts) { $stats.CpuSeconds/$stats.CpuAttempts } else { 0 }
     $stats.PagesPerSecond=($stats.GpuPages+$stats.CpuPages)/[Math]::Max(0.000001,$stats.Seconds)
