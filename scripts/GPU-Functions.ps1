@@ -9,6 +9,27 @@ function Convert-GpuQualityToCq {
     return [int][Math]::Round(50.0 - (($Quality - 30) * (35.0 / 65.0)))
 }
 
+# Map Q30..95 to the existing NVENC CQ scale. Adjacent Q values may map
+# to the same integer CQ, which makes additional quality probes redundant.
+function Get-GpuDistinctQualityCandidate {
+    param(
+        [Parameter(Mandatory=$true)][int]$Low,
+        [Parameter(Mandatory=$true)][int]$High,
+        [int[]]$UsedCqs = @()
+    )
+    if ($Low -gt $High) { return $null }
+    $mid = [int][Math]::Floor(($Low + $High) / 2)
+    for ($offset = 0; $offset -le ($High - $Low); $offset++) {
+        # On equal distance prefer higher Q, for quality-first selection.
+        foreach ($candidate in @(($mid + $offset), ($mid - $offset))) {
+            if ($candidate -lt $Low -or $candidate -gt $High) { continue }
+            $cq = Convert-GpuQualityToCq -Quality $candidate
+            if ($UsedCqs -notcontains $cq) { return [int]$candidate }
+        }
+    }
+    return $null
+}
+
 function Get-GpuEncodeArguments {
     param(
         [Parameter(Mandatory=$true)][int]$Quality,

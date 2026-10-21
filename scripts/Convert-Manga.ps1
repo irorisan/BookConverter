@@ -568,7 +568,8 @@ function Get-AvifSampleEstimate {
     # 品質ごとに別の作業先へ保存する。本変換終了まで保持する。
     $sampleDir = Join-Path $ScratchDir ('sample_q' + $Quality)
     [void](Invoke-ParallelAvif -Entries $selected -Encoder $Encoder -Decoder $Decoder `
-        -Quality $Quality -Workers $Workers -TempDir $sampleDir -OutputName "$VolumeName / 試算 Q$Quality")
+        -Quality $Quality -Workers $Workers -TempDir $sampleDir -OutputName "$VolumeName / 試算 Q$Quality" `
+        -GpuBatch:$GPU)
     $sampleEncoded = [long]0
     $cache = [System.Collections.Generic.List[object]]::new()
     foreach ($sample in $selected) {
@@ -605,9 +606,16 @@ function Find-AvifQuality {
     $high = $MaxQuality
     $bestProbe = $null
     $probes = [System.Collections.Generic.List[object]]::new()
+    $usedCqs = [System.Collections.Generic.HashSet[int]]::new()
 
     for ($iteration = 0; $iteration -lt 5 -and $low -le $high; $iteration++) {
         $candidate = [int][Math]::Floor(($low + $high) / 2)
+        if ($GPU) {
+            $distinct = Get-GpuDistinctQualityCandidate -Low $low -High $high -UsedCqs ([int[]]@($usedCqs))
+            if ($null -eq $distinct) { break }
+            $candidate = [int]$distinct
+            [void]$usedCqs.Add((Convert-GpuQualityToCq -Quality $candidate))
+        }
         $probe = Get-AvifSampleEstimate -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
             -Quality $candidate -Workers $Workers -ScratchDir $ScratchDir -VolumeName $VolumeName
         $probes.Add($probe)
