@@ -3,6 +3,28 @@ $ErrorActionPreference = 'Stop'
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repo 'scripts/Hybrid-QualityParallel.ps1')
 
+# Interactive and argument-based probe selection are independent of full-pass CPU workers.
+$script:answers=[System.Collections.Generic.Queue[string]]::new()
+function Read-MangaResponse {
+    param([string]$Prompt)
+    if($script:answers.Count -eq 0){return $null}
+    return $script:answers.Dequeue()
+}
+if((Select-CpuProbeWorkers -Requested 0 -Interactive) -ne 0){throw 'Explicit zero must disable CPU probing'}
+if((Select-CpuProbeWorkers -Requested 8 -Interactive) -ne 8){throw 'Explicit eight must be permitted'}
+if((Select-CpuProbeWorkers -Interactive:$false) -ne 4){throw 'Noninteractive default must be four'}
+$script:answers.Enqueue('bad')
+$script:answers.Enqueue('9')
+$script:answers.Enqueue('-1')
+$script:answers.Enqueue('8')
+if((Select-CpuProbeWorkers -Interactive) -ne 8){throw 'Interactive validation and eight selection failed'}
+$script:answers.Enqueue('')
+if((Select-CpuProbeWorkers -Interactive) -ne 4){throw 'Interactive Enter default failed'}
+$script:answers.Enqueue('0')
+if((Select-CpuProbeWorkers -Interactive) -ne 0){throw 'Interactive zero selection failed'}
+if($null -ne (Select-CpuProbeWorkers -Interactive)){throw 'Interactive EOF must abort safely'}
+
+
 # Dependency-free quality-search test: no mock encoder executable.
 function Test-AvifOutput { param([string]$Path) }
 function Invoke-ParallelAvif { param() }
@@ -15,6 +37,7 @@ function Find-AvifQuality {
     [IO.Directory]::CreateDirectory($ScratchDir) | Out-Null
     [IO.File]::WriteAllText((Join-Path $ScratchDir ($backend+'-started')),
         [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds().ToString())
+    [IO.File]::WriteAllText((Join-Path $ScratchDir ($backend+'-workers')), [string]$Workers)
     $duration=if($VolumeName -match 'cancel-test' -and -not $CpuProbe){4000}else{1400}
     if($VolumeName -match 'cancel-test' -and $CpuProbe){throw 'Deliberate CPU search failure'}
     $elapsed=[Diagnostics.Stopwatch]::StartNew()
@@ -46,6 +69,19 @@ try {
     if([Math]::Abs($g-$c) -ge 1000){throw 'GPU and CPU probes did not start concurrently'}
     if($before.Elapsed.TotalSeconds -ge 3.5){throw 'Quality search took as long as serial execution'}
     if($entries[0].SourcePath -ne 'source.png'){throw 'Original entry was modified'}
+    foreach($n in @(0,8)){
+        $probeDir=Join-Path $temp ('workers-'+$n)
+        $probe=Invoke-HybridQualitySearch -Entries $entries -Encoder 'unused.exe' -CpuEncoder 'unused.exe' -GpuWorkers 12 -CpuProbeWorkers $n -ScratchDir $probeDir -VolumeName ('workers-'+$n) -SampleLimitBytes 68MB -ScriptRoot (Join-Path $repo 'scripts') -EncoderTimeoutSeconds 5
+        if($probe.GpuChoice.Quality -ne 83){throw "GPU quality missing for probe workers $n"}
+        if($n -eq 0){
+            if($null -ne $probe.CpuChoice -or @($probe.Passes).Count -ne 1 -or (Test-Path -LiteralPath (Join-Path $probeDir 'Cpu-started'))){throw 'Zero must omit CPU exploration completely'}
+        }
+        else {
+            if($probe.CpuChoice.Quality -ne 71 -or @($probe.Passes).Count -ne 2){throw 'Eight must preserve CPU quality exploration'}
+            if((Get-Content -LiteralPath (Join-Path $probeDir 'Cpu-workers') -Raw) -ne '8'){throw 'CPU probe worker count not propagated'}
+        }
+    }
+
 
     $failed=$false
     $cancelDir=Join-Path $temp 'cancel'
