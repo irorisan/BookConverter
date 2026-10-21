@@ -45,6 +45,10 @@ jobs:
         shell: pwsh
         run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-progress.ps1
 
+      - name: Validate NVENC AVIF parameters and PowerShell 5.1 syntax
+        shell: pwsh
+        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-gpu.ps1
+
       - name: Smoke test unchanged small CBZ copy
         shell: pwsh
         run: python tests/powershell/smoke_cbz.py
