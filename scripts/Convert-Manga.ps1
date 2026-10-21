@@ -351,8 +351,8 @@ function Invoke-ParallelAvif {
     New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
     if ($GPU -and $GpuBatch) {
-        # Keep the sample-search (single image) and CPU paths unchanged until
-        # the dedicated quality-search follow-up PR enables this explicitly.
+        # Share the selected GPU batch layout between quality sampling and full encoding.
+        # CPU mode still uses the unchanged avifenc implementation.
         $batchTimer = [System.Diagnostics.Stopwatch]::StartNew()
         try {
             $convertedPaths = @(Invoke-GpuEncodeBatch -Entries $pending -FFmpeg $Encoder -Decoder $Decoder `
