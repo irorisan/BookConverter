@@ -28,7 +28,7 @@ function Format-MangaProgressStatus {
     if($ElapsedSeconds -gt 0 -and $done -gt 0){
         $speed=('{0:F2} {1}/s' -f ($done/$ElapsedSeconds),$Unit)
     }
-    $milliseconds=[long][Math]::Floor([Math]::Max(0,$ElapsedSeconds)*1000)
+    $milliseconds=[long][Math]::Floor([Math]::Max([double]0,$ElapsedSeconds)*1000)
     $elapsed=Format-MangaElapsed -Duration ([TimeSpan]::FromMilliseconds($milliseconds))
     $status+=' | 速度 '+$speed+' | 経過 '+$elapsed
     if($Width -ge 155){
