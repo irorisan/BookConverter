@@ -17,9 +17,9 @@ def main() -> None:
         raise SystemExit("Requires Windows PowerShell 5.1")
     with tempfile.TemporaryDirectory(prefix="bookconv-gpu-passthrough-") as td:
         root = Path(td)
-        for script, source_name, stdin, selected in (
-            ("Convert-Manga-GPU.bat", "作品 v01.cbz", "\n2\nq\n", "6プロセス × 2画像"),
-            ("Convert-Manga-Magazine-GPU.bat", "月刊誌 (15).cbz", "1\nq\n", "12プロセス × 1画像"),
+        for script, source_name, stdin in (
+            ("Convert-Manga-GPU.bat", "作品 v01.cbz", "\nq\n"),
+            ("Convert-Manga-Magazine-GPU.bat", "月刊誌 (15).cbz", "q\n"),
         ):
             source = root / source_name
             with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_STORED) as z:
@@ -31,8 +31,8 @@ def main() -> None:
                 errors="replace", timeout=120, check=False,
             )
             assert result.returncode == 0, (script, result.stdout, result.stderr)
-            assert "GPUプリセット [1-4]" in result.stdout, (script, result.stdout)
-            assert selected in result.stdout, (script, result.stdout)
+            assert "GPUプリセット [1-4]" not in result.stdout, (script, result.stdout)
+            assert "GPU並列: 12プロセス × 1画像（固定）" in result.stdout, (script, result.stdout)
             output = root / "avif変換cbz" / source_name
             assert output.is_file(), (script, result.stdout, result.stderr)
             assert digest(output) == before, "GPU BAT modified a small CBZ"
