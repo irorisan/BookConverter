@@ -12,7 +12,9 @@ function Invoke-GpuLedCpuCalibration {
     $gpuSamples=@($GpuProbe.Cache)
     if($gpuSamples.Count -eq 0){throw 'No GPU quality samples available for CPU calibration'}
     $positions=[System.Collections.Generic.SortedSet[int]]::new()
-    foreach($position in @(0,[int][Math]::Floor(($gpuSamples.Count-1)/2),$gpuSamples.Count-1)){
+    [int]$last=$gpuSamples.Count - 1
+    [int]$middle=[int][Math]::Floor($last / 2.0)
+    foreach($position in @(0,$middle,$last)){
         [void]$positions.Add($position)
     }
     $references=[System.Collections.Generic.List[object]]::new()
