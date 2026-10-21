@@ -901,6 +901,8 @@ function Invoke-MangaBatch {
     # Prefer the first (naturally sorted) input and skip subsequent collisions.
     $plannedOutputs = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $completedItems = 0
+    # Exclude time spent waiting for series title / worker input.
+    $batchTimer = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($item in ($Items | Sort-Object @{ Expression = { Get-NaturalSortKey -Name $_.Volume } }, FullName)) {
         if ($item.IsStandalone) {
             $outputName = "$($item.SourceBase).cbz"
@@ -1101,9 +1103,11 @@ function Invoke-MangaBatch {
         }
     }
 
+    $batchTimer.Stop()
     Write-MangaOverallProgress -Completed $completedItems -Total $Items.Count -Done
     Write-Host "`n========== 完了 ==========" -ForegroundColor Cyan
     Write-Host "成功: $success / 上限超過: $oversized / スキップ: $skipped / 失敗: $failed"
+    Write-Host ("変換所要時間: {0}" -f (Format-MangaElapsed -Duration $batchTimer.Elapsed))
     Write-Host '元のフォルダ・ZIP・RAR・CBZは削除していません。'
 }
 
