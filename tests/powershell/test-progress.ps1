@@ -13,7 +13,7 @@ if (-not (Test-Path (Join-Path $root 'Convert-Manga.bat'))) { throw 'Missing BAT
 if (-not (Test-Path (Join-Path $root 'README.md'))) { throw 'Missing README' }
 $mainSource = Get-Content -LiteralPath (Join-Path $root 'scripts\Convert-Manga.ps1') -Raw -Encoding UTF8
 foreach ($needle in @('Write-MangaOverallProgress', 'Write-MangaStage',
-        'Write-Progress -Id 2 -ParentId 1', '上限超過: $oversized')) {
+        'Write-MangaPageProgress', 'Initialize-MangaProgress', '上限超過: $oversized')) {
     if (-not $mainSource.Contains($needle)) { throw "Missing progress integration: $needle" }
 }
 
@@ -44,6 +44,40 @@ function Write-Progress {
         PercentComplete = $PercentComplete; Completed = [bool]$Completed
     })
 }
+# PowerShell 7.6 defaults to Minimal; the nested classic bars must be
+# explicitly selected for ConsoleHost and Windows Terminal.
+Initialize-MangaProgress
+Assert-Eq ([string]$PSStyle.Progress.View) 'Classic' 'PowerShell 7.6 nested progress view'
+
+# Nested page progress must always use the parent's ID and real completed counts.
+Write-MangaPageProgress -Completed 0 -Total 40 -Activity 'AVIF本変換'
+Write-MangaPageProgress -Completed 12 -Total 40 -Activity 'AVIF本変換'
+Write-MangaPageProgress -Completed 40 -Total 40 -Activity 'AVIF本変換' -Done
+Assert-Eq $script:progressCalls.Count 3 'three page progress calls'
+Assert-Eq $script:progressCalls[0].ParentId 1 'page parent ID'
+Assert-Eq $script:progressCalls[0].Id 2 'page ID'
+Assert-Eq $script:progressCalls[0].PercentComplete 0 'page start percent'
+Assert-Eq $script:progressCalls[1].PercentComplete 30 'page completed percent'
+Assert-Eq $script:progressCalls[2].Completed $true 'page progress completed'
+$script:progressCalls.Clear()
+
+$hybridAstErrors=$null
+$hybridAstTokens=$null
+$hybridAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'scripts/Hybrid-Functions.ps1'),[ref]$hybridAstTokens,[ref]$hybridAstErrors)
+if($hybridAstErrors){throw $hybridAstErrors[0]}
+$encodeNode=$hybridAst.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-HybridEncode'},$true)
+$emits=@($encodeNode.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Write-MangaPageProgress'},$true))
+if($emits.Count -lt 1){throw 'Hybrid GPU/CPU conversion must update the nested page progress'}
+# Full conversion must enable tracking; sample quality probes must not.
+$parallelNode=$ast=$null
+$mainTokens=$null; $mainErrors=$null
+$mainAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'scripts/Convert-Manga.ps1'),[ref]$mainTokens,[ref]$mainErrors)
+if($mainErrors){throw $mainErrors[0]}
+$parallelNode=$mainAst.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-ParallelAvif'},$true)
+$hybridCalls=@($parallelNode.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-HybridEncode'},$true))
+if($hybridCalls.Count -ne 1 -or $hybridCalls[0].Extent.Text -notmatch '-TrackProgress:\$FullPass'){throw 'Full conversion must enable progress but sample probes must not'}
+
+
 Write-MangaOverallProgress -Completed 1 -Total 4 -Name '作品 v02.cbz'
 Assert-Eq $script:progressCalls.Count 1 'one overall call'
 Assert-Eq $script:progressCalls[0].Id 1 'overall id'

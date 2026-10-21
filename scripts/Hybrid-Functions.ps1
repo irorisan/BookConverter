@@ -27,7 +27,8 @@ function Invoke-HybridEncode {
         [ValidateRange(0,4)][int]$CpuWorkers=4,
         [Parameter(Mandatory=$true)][string]$TempDir,
         [string]$CancelFile,
-        [ValidateRange(1,86400)][int]$TimeoutSeconds=300
+        [ValidateRange(1,86400)][int]$TimeoutSeconds=300,
+        [switch]$TrackProgress
     )
     if ($GpuWorkers + $CpuWorkers -eq 0) { throw 'No workers configured' }
     # Never remove a caller-owned directory during error cleanup.
@@ -43,7 +44,10 @@ function Invoke-HybridEncode {
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $success = $false
     $cpuLimit = $CpuWorkers
+    $progressActivity = 'AVIF本変換（GPU/CPU）'
+    $lastProgressMilliseconds = -1000.0
     try {
+        if ($TrackProgress) { Write-MangaPageProgress -Completed 0 -Total $Entries.Count -Activity $progressActivity -Workers ($GpuWorkers + $CpuWorkers) }
         for ($i=0; $i -lt $Entries.Count; $i++) {
             $pending.Enqueue([pscustomobject]@{Entry=$Entries[$i]; Index=$i; Backend=''; Attempts=0; InputPath=$null; OutputPath=(Join-Path $TempDir ('page_{0:D6}.avif' -f $i)); Staged=$null; Process=$null; Started=0.0; Preparing=$false})
         }
@@ -79,6 +83,14 @@ function Invoke-HybridEncode {
                     $job.Entry.Length=[long](Get-Item -LiteralPath $job.OutputPath).Length
                     $job.Entry | Add-Member -NotePropertyName EncodedBy -NotePropertyValue $job.Backend -Force
                     $stats[$job.Backend+'Pages']++
+                    if ($TrackProgress) {
+                        $completedPages = $stats.GpuPages + $stats.CpuPages
+                        $nowMilliseconds = $timer.Elapsed.TotalMilliseconds
+                        if (($nowMilliseconds - $lastProgressMilliseconds) -ge 150 -or $completedPages -eq $Entries.Count) {
+                            Write-MangaPageProgress -Completed $completedPages -Total $Entries.Count -Activity $progressActivity -Workers ($GpuWorkers + $CpuWorkers)
+                            $lastProgressMilliseconds = $nowMilliseconds
+                        }
+                    }
                     Remove-Item -LiteralPath $job.Staged -Force -ErrorAction SilentlyContinue
                     if ($job.InputPath -ne $job.Staged) { Remove-Item -LiteralPath $job.InputPath -Force -ErrorAction SilentlyContinue }
                 } else {
@@ -171,6 +183,7 @@ function Invoke-HybridEncode {
         $stats.CpuAverageSeconds=if ($stats.CpuAttempts) { $stats.CpuSeconds/$stats.CpuAttempts } else { 0 }
         $stats.PagesPerSecond=($stats.GpuPages+$stats.CpuPages)/[Math]::Max(0.000001,$stats.Seconds)
         if (-not $success) { Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue }
+        if ($TrackProgress) { Write-MangaPageProgress -Activity $progressActivity -Done }
     }
     return [pscustomobject]$stats
 }
