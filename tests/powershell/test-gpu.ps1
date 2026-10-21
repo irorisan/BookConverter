@@ -82,7 +82,7 @@ public static class MockFfmpegVerification {
     } | Sort-Object)
     if (($counts -join ',') -ne '1,8,8') { throw "Invalid batch input counts: $($counts -join ',')" }
 
-    Remove-Item -LiteralPath (Join-Path $logDir '*.txt') -Force
+    Get-ChildItem -LiteralPath $logDir -Filter '*.txt' | Remove-Item -Force
     $twoFifty = @(1..250 | ForEach-Object { 'C:\test\page_{0:D3}.avif' -f $_ })
     Invoke-GpuVerifyAvifBatch -Paths $twoFifty -FFmpeg $fakeExe -Workers 8
     $logs = @(Get-ChildItem -LiteralPath $logDir -Filter '*.txt')
