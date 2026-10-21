@@ -11,10 +11,19 @@ foreach ($quality in 30..95) {
     $previous = $cq
 }
 $args = Get-GpuEncodeArguments -Quality 75 -InputPath 'C:\image.png' -OutputPath 'C:\image.avif'
-foreach ($token in @('av1_nvenc', '-preset p7', '-f avif', '-pix_fmt yuv420p', '-frames:v 1', '-tune hq', '-rc vbr')) {
+foreach ($token in @('av1_nvenc', '-preset p7', '-f avif', '-pix_fmt yuv420p', '-frames:v 1', '-tune hq', '-rc vbr', '-nostdin')) {
     if (-not $args.Contains($token)) { throw "GPU encoder argument missing: $token" }
 }
 if ($args.Contains('-preset p4')) { throw 'Old GPU p4 preset must not be used' }
+# The temporary benchmark selector and multi-output generator must be gone.
+foreach ($oldName in @('Get-GpuBenchmarkPreset', 'Get-GpuBatchProcessLimit', 'Get-GpuBatchEncodeArguments')) {
+    if (Get-Command $oldName -CommandType Function -ErrorAction SilentlyContinue) {
+        throw "Unused GPU benchmark function remains: $oldName"
+    }
+}
+if (-not (Get-Command Invoke-GpuEncodePages -CommandType Function -ErrorAction SilentlyContinue)) {
+    throw 'Expected fixed one-image-per-FFmpeg encoder'
+}
 foreach ($path in @((Join-Path $repo 'scripts\GPU-Functions.ps1'), (Join-Path $repo 'scripts\Convert-Manga.ps1'))) {
     $tokens = $null
     $errors = $null
@@ -116,33 +125,12 @@ finally {
 Write-Host 'GPU batched decoding: all inputs mapped, 250 pages in 32 processes, failures propagated'
 
 
-# Phase 1: four independent NVENC AVIF output files per FFmpeg invocation.
-$pairs = @(1..4 | ForEach-Object {
-    [pscustomobject]@{
-        InputPath = ('C:\imgs\{0}.png' -f $_)
-        OutputPath = ('C:\out\{0}.avif' -f $_)
-    }
-})
-$batchedArgs = Get-GpuBatchEncodeArguments -Jobs $pairs -Quality 75
-foreach ($token in @('-preset p7', '-tune hq', '-rc vbr', '-frames:v 1', '-f avif')) {
-    if (-not $batchedArgs.Contains($token)) { throw "Missing batch encoder option: $token" }
+# GPU must use one AVIF output and one input per FFmpeg process.
+$singleArgs = Get-GpuEncodeArguments -Quality 75 -InputPath 'C:\imgs\001.png' -OutputPath 'C:\out\001.avif'
+foreach ($token in @('-i ', '-preset p7', '-frames:v 1', '-f avif', '-nostdin')) {
+    if (-not $singleArgs.Contains($token)) { throw "Missing single-image AVIF option: $token" }
 }
-foreach ($index in 0..3) {
-    if (-not $batchedArgs.Contains(('-map {0}:v:0' -f $index))) { throw "Missing batch output mapping: $index" }
-}
-if (($batchedArgs.Split([string[]]@(' -i '),[StringSplitOptions]::None).Count - 1) -ne 4) {
-    throw 'Every input must be passed independently to batch encoder'
-}
-if (($batchedArgs.Split([string[]]@(' -f avif '),[StringSplitOptions]::None).Count - 1) -ne 4) {
-    throw 'Each output must be a separate AVIF file'
-}
-if (($batchedArgs.Split([string[]]@(' -preset p7 '),[StringSplitOptions]::None).Count - 1) -ne 4) {
-    throw 'Each output must use NVENC p7'
-}
-if ((Get-GpuBatchProcessLimit -Workers 8 -BatchSize 4) -ne 3 -or
-    (Get-GpuBatchProcessLimit -Workers 1 -BatchSize 4) -ne 1) {
-    throw 'GPU batching may not exceed twelve simultaneous NVENC sessions'
-}
+if ($singleArgs.Contains(' -map 1:v:0')) { throw 'Single-image encoder must not map a second stream' }
 
 $encodeTemp = Join-Path ([IO.Path]::GetTempPath()) ('BookConv_EncodeTest_' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $encodeTemp -Force | Out-Null
@@ -169,7 +157,7 @@ public static class MockEncode {
             if (args[i] == "-preset" && i+1<args.Length && args[i+1] == "p7") preset = true;
             if (args[i].EndsWith(".avif", StringComparison.OrdinalIgnoreCase)) outputs.Add(args[i]);
         }
-        if (inputs<1 || inputs>4 || maps != inputs || outputs.Count != inputs || !preset) return 16;
+        if (inputs!=1 || maps>1 || outputs.Count != 1 || !preset) return 16;
         byte[] header = {0,0,0,16,102,116,121,112,97,118,105,102,0,0,0,0};
         foreach (string path in outputs) File.WriteAllBytes(path, header);
         return 0;
@@ -200,78 +188,60 @@ public static class MockEncode {
         })
     }
     $outputDir = Join-Path $encodeTemp 'output'
-    $convertedPaths = @(Invoke-GpuEncodeBatch -Entries $images.ToArray() -FFmpeg $fakeEncoder -Quality 75 -Workers 8 -TempDir $outputDir -OutputName 'test')
+    $convertedPaths = @(Invoke-GpuEncodePages -Entries $images.ToArray() -FFmpeg $fakeEncoder -Quality 75 -TempDir $outputDir -OutputName 'test')
     if ($convertedPaths.Count -ne 9) { throw "Expected 9 encoded pages, got $($convertedPaths.Count)" }
     foreach ($entry in $images) { Test-AvifOutput -Path $entry.SourcePath }
     $logs = @(Get-ChildItem -LiteralPath $logDir -Filter '*.txt')
-    if ($logs.Count -ne 3) { throw "Expected 3 FFmpeg encoding launches for 9 pages, got $($logs.Count)" }
+    if ($logs.Count -ne 9) { throw "Expected 9 FFmpeg encoding launches for 9 pages, got $($logs.Count)" }
     $counts = @($logs | ForEach-Object {
-        @((Get-Content -LiteralPath $_.FullName) | Where-Object { $_ -eq '-map' }).Count
+        @((Get-Content -LiteralPath $_.FullName) | Where-Object { $_ -eq '-i' }).Count
     } | Sort-Object)
-    if (($counts -join ',') -ne '1,4,4') { throw "Unexpected batch sizes: $($counts -join ',')" }
+    if (($counts -join ',') -ne '1,1,1,1,1,1,1,1,1') { throw "Unexpected image grouping: $($counts -join ',')" }
 
 
-    # Temporary presets control both simultaneous FFmpeg processes and
-    # independently encoded AVIF images per process.
-    $presets = @(
-        [pscustomobject]@{ Choice='1'; Processes=12; Images=1; Launches=12 }
-        [pscustomobject]@{ Choice='2'; Processes=6; Images=2; Launches=6 }
-        [pscustomobject]@{ Choice='3'; Processes=4; Images=3; Launches=4 }
-        [pscustomobject]@{ Choice='4'; Processes=3; Images=4; Launches=3 }
-    )
-    if ($null -ne (Get-GpuBenchmarkPreset -Choice '0') -or
-        $null -ne (Get-GpuBenchmarkPreset -Choice '5')) {
-        throw 'Unknown GPU benchmark choice must be rejected'
+    # Twelve images produce twelve independent FFmpeg launches; no preset chosen.
+    $twelve = [System.Collections.Generic.List[object]]::new()
+    foreach ($number in 1..12) {
+        $inputPath = Join-Path $encodeTemp ('fixed_{0:D2}.png' -f $number)
+        [IO.File]::WriteAllBytes($inputPath, [byte[]]@(1,2,3))
+        $twelve.Add([pscustomobject]@{
+            SourcePath = $inputPath
+            EntryName = ('fixed_{0:D2}.avif' -f $number)
+            NeedsConversion = $true
+            Extension = '.png'
+            Length = 3L
+        })
     }
-    foreach ($preset in $presets) {
-        $actualPreset = Get-GpuBenchmarkPreset -Choice $preset.Choice
-        if ($actualPreset.ProcessCount -ne $preset.Processes -or
-            $actualPreset.BatchSize -ne $preset.Images) {
-            throw "Wrong process/image configuration for preset $($preset.Choice)"
+    Get-ChildItem -LiteralPath $logDir -Filter '*.txt' | Remove-Item -Force
+    $fixedOutput = Join-Path $encodeTemp 'fixed_12'
+    $converted = @(Invoke-GpuEncodePages -Entries $twelve.ToArray() -FFmpeg $fakeEncoder -Quality 75 -TempDir $fixedOutput -OutputName 'fixed')
+    if ($converted.Count -ne 12) { throw "Fixed GPU encoder produced $($converted.Count)/12 pages" }
+    $fixedLogs = @(Get-ChildItem -LiteralPath $logDir -Filter '*.txt')
+    if ($fixedLogs.Count -ne 12) { throw "Expected 12 independent FFmpeg launches, got $($fixedLogs.Count)" }
+    foreach ($log in $fixedLogs) {
+        $lines = @(Get-Content -LiteralPath $log.FullName)
+        if (@($lines | Where-Object { $_ -eq '-i' }).Count -ne 1) {
+            throw 'Each encoder invocation must have one input'
         }
-        if ((Get-GpuBatchProcessLimit -Workers $preset.Processes -BatchSize $preset.Images) -ne $preset.Processes) {
-            throw "GPU process limit does not match preset $($preset.Choice)"
-        }
-        $testEntries = [System.Collections.Generic.List[object]]::new()
-        foreach ($number in 1..12) {
-            $source = Join-Path $encodeTemp ('benchmark_{0:D2}.png' -f $number)
-            [IO.File]::WriteAllBytes($source, [byte[]]@(1,2,3))
-            $testEntries.Add([pscustomobject]@{
-                SourcePath = $source
-                EntryName = ('benchmark_{0:D2}.avif' -f $number)
-                NeedsConversion = $true
-                Extension = '.png'
-                Length = 3L
-            })
-        }
-        Get-ChildItem -LiteralPath $logDir -Filter '*.txt' | Remove-Item -Force
-        $presetOutput = Join-Path $encodeTemp ('preset_' + $preset.Choice)
-        $converted = @(Invoke-GpuEncodeBatch -Entries $testEntries.ToArray() -FFmpeg $fakeEncoder -Quality 75 -Workers $preset.Processes -BatchSize $preset.Images -TempDir $presetOutput -OutputName ('preset_' + $preset.Choice))
-        if ($converted.Count -ne 12) { throw "Preset $($preset.Choice) produced only $($converted.Count) pages" }
-        foreach ($entry in $testEntries) { Test-AvifOutput -Path $entry.SourcePath }
-        $presetLogs = @(Get-ChildItem -LiteralPath $logDir -Filter '*.txt')
-        if ($presetLogs.Count -ne $preset.Launches) {
-            throw "Preset $($preset.Choice) expected $($preset.Launches) FFmpeg launches, got $($presetLogs.Count)"
-        }
-        $mapped = 0
-        foreach ($log in $presetLogs) {
-            $argsLine = @(Get-Content -LiteralPath $log.FullName)
-            $inputs = @($argsLine | Where-Object { $_ -eq '-i' }).Count
-            $maps = @($argsLine | Where-Object { $_ -eq '-map' }).Count
-            if ($inputs -lt 1 -or $inputs -gt $preset.Images -or $inputs -ne $maps) {
-                throw "Preset $($preset.Choice) has incorrect input/output mapping"
-            }
-            $mapped += $maps
-        }
-        if ($mapped -ne 12) { throw "Preset $($preset.Choice) omitted images" }
     }
-    $entryCode = Get-Content -LiteralPath (Join-Path $repo 'scripts\Convert-Manga.ps1') -Raw -Encoding UTF8
-    if (-not $entryCode.Contains('Get-GpuBenchmarkPreset -Choice') -or
-        -not $entryCode.Contains('-GpuBatchSize $gpuBatchSize')) {
-        throw 'GPU choice must reach both sample search and full conversion'
+    foreach ($entry in $twelve) { Test-AvifOutput -Path $entry.SourcePath }
+    $sourceText = Get-Content -LiteralPath (Join-Path $repo 'scripts\Convert-Manga.ps1') -Raw -Encoding UTF8
+    if ($sourceText.Contains('GPUプリセット [1-4]') -or
+        $sourceText.Contains('Get-GpuBenchmarkPreset -Choice') -or
+        $sourceText.Contains('-GpuBatchSize')) {
+        throw 'Temporary GPU benchmark selection still exists'
     }
-    Write-Host 'GPU benchmark presets 1-4: distinct FFmpeg processes and output mappings: OK'
-
+    if (-not $sourceText.Contains('$workers = 12') -or
+        -not $sourceText.Contains('Invoke-GpuEncodePages')) {
+        throw 'GPU encoder must use fixed twelve-process single-image path'
+    }
+    $sampleStart = $sourceText.IndexOf('function Get-AvifSampleEstimate')
+    $sampleEnd = $sourceText.IndexOf('function Find-AvifQuality')
+    if ($sampleStart -lt 0 -or $sampleEnd -le $sampleStart -or
+        -not $sourceText.Substring($sampleStart,$sampleEnd-$sampleStart).Contains('-GpuBatch:$GPU')) {
+        throw 'GPU quality samples must use the same fixed GPU encoder'
+    }
+    Write-Host 'GPU fixed 12 processes / 1 image: mock FFmpeg validated for 9 and 12 pages'
     $env:BOOKCONV_ENCODE_FAIL = '1'
     $failed = $false
     $failEntries = [System.Collections.Generic.List[object]]::new()
@@ -283,7 +253,7 @@ public static class MockEncode {
         Length = 3L
     })
     try {
-        [void](Invoke-GpuEncodeBatch -Entries $failEntries.ToArray() -FFmpeg $fakeEncoder -Quality 75 -Workers 4 -TempDir (Join-Path $encodeTemp 'failed') -OutputName 'failed')
+        [void](Invoke-GpuEncodePages -Entries $failEntries.ToArray() -FFmpeg $fakeEncoder -Quality 75 -TempDir (Join-Path $encodeTemp 'failed') -OutputName 'failed')
     } catch { $failed = $true }
     if (-not $failed) { throw 'Nonzero FFmpeg exit must fail the volume, never silently fall back to CPU' }
 }
@@ -292,6 +262,6 @@ finally {
     Remove-Item Env:BOOKCONV_ENCODE_FAIL -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $encodeTemp -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Host 'GPU encoding groups: separate AVIF outputs, 9 pages in 3 processes, failure propagation: OK'
+Write-Host 'GPU single-image encoding: 12 processes fixed, fail-closed: OK'
 
 Write-Host 'GPU quality mapping, command arguments, PowerShell syntax and BATs: OK'
