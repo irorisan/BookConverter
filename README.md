@@ -56,7 +56,7 @@ BookConverter/
 **自分用の更新機能**：`Update-BookConverter.bat` を実行すると、GitHub `irorisan/BookConverter` の**最新main**をZIPで取得して更新します。Gitコマンドは不要です。
 
 - ローカルの `tools/` と `.git/`、漫画入力・出力フォルダ、GitHub管理対象外のファイルは削除・更新しません。
-- 旧GPUテストZIPに存在した `Install-Latest-GitHub-GPU-Test.bat` / `Install-Latest-GitHub-GPU-Test.ps1` と、移動前のルート直下の6種類のPS1は更新時に取り除きます。
+- アップデーターは最新mainにあるファイルだけを更新し、古いファイルや個人用ファイルを自動削除しません。
 - 更新対象のファイルは一時的にバックアップし、途中で失敗すると書き換えたものを元に戻します。
 - 変換中は実行せず、変換終了後に更新してください。GitHubへの接続が必要です。
 - GitHub本体に組み込まれるバックグラウンド更新機能ではありません。BATから手動実行する個人用ユーティリティです。
