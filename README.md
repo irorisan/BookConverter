@@ -191,4 +191,4 @@ ONE PIECE/
 - **WinRAR・avifenc・dwebpを使うWindows実機E2Eは未検証**です。CIではPowerShell 7.6のBAT連続変換・小型CBZのSHA-256・EPUB/spine・自然順・命名・容量境界を検証します。実機ドロップも未確認です。[実機の確認手順](DOCS/PHASE3_4_CONTINUOUS.md) に従い、初めに少数ページ・1巻で確認してください。
 GPU12＋CPU4の実験は [設計・測定手順](DOCS/HYBRID_AVIF.md) を参照。
 `Convert-Manga-Hybrid.bat`（漫画）または `scripts/Convert-Manga.ps1 -ConversionMode Hybrid`
-で明示起動する。比較用は `-ConversionMode GPU`。既存BATの既定動作は変わらない。
+で明示起動する。比較用は `-ConversionMode GPU`。Hybridの対話起動ではCPU品質探索の並列数を**0〜8（Enterで4）**から選べる。引数 `-CpuProbeWorkers 8` でも指定可能。**0はCPU品質探索のみ省略**し、CPU本変換の既定4並列は維持する。自動実行・パイプ入力では既定4を使う。詳しくは[設計・測定手順](DOCS/HYBRID_AVIF.md)。既存BATの既定動作は変わらない。

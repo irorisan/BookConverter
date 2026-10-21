@@ -4,6 +4,7 @@ param(
     [ValidateSet('Legacy','GPU','Hybrid')][string]$ConversionMode='Legacy',
     [ValidateRange(1,12)][int]$GpuWorkers=12,
     [ValidateRange(1,4)][int]$CpuWorkers=4,
+    [ValidateRange(0,8)][Nullable[int]]$CpuProbeWorkers,
     [string]$ReportDirectory,
     [string]$CancelFile,
     [ValidateRange(1,86400)][int]$EncoderTimeoutSeconds=300,
@@ -690,7 +691,8 @@ function Invoke-AutoSizeAvif {
         [string]$OutputName,
         [long]$MaxTargetBytes,
         [long]$SampleSafetyBytes,
-        [System.Collections.IDictionary]$StageTimes
+        [System.Collections.IDictionary]$StageTimes,
+        [ValidateRange(0,8)][int]$CpuProbeWorkers=4
     )
     # ZIPヘッダー・中央ディレクトリエントリによる増分も見込む。
     $zipOverheadBytes = [long]0
@@ -705,13 +707,17 @@ function Invoke-AutoSizeAvif {
     try {
         if ($ConversionMode -eq 'Hybrid') {
             $parallel = Invoke-HybridQualitySearch -Entries $Entries -Encoder $Encoder -CpuEncoder $script:CpuEncoder `
-                -Decoder $Decoder -GpuWorkers $GpuWorkers -CpuWorkers $CpuWorkers `
+                -Decoder $Decoder -GpuWorkers $GpuWorkers -CpuProbeWorkers $CpuProbeWorkers `
                 -ScratchDir $ScratchDir -VolumeName $OutputName -SampleLimitBytes $sampleLimit `
                 -ScriptRoot $PSScriptRoot -CancelFile $CancelFile -EncoderTimeoutSeconds $EncoderTimeoutSeconds
             $qualityChoice = $parallel.GpuChoice
-            $script:HybridCpuQuality = $parallel.CpuChoice.Quality
+            $script:HybridCpuQuality = if ($CpuProbeWorkers -eq 0) { 95 } else { $parallel.CpuChoice.Quality }
             foreach ($pass in $parallel.Passes) { $script:EncodePasses.Add($pass) }
-            Write-Host "  Concurrent qualities: GPU CQ$(Convert-GpuQualityToCq $qualityChoice.Quality), CPU q$($script:HybridCpuQuality)"
+            if ($CpuProbeWorkers -eq 0) {
+                Write-Host "  GPU quality: CQ$(Convert-GpuQualityToCq $qualityChoice.Quality); CPU probe skipped (CPU encode q95)"
+            } else {
+                Write-Host "  Concurrent qualities: GPU CQ$(Convert-GpuQualityToCq $qualityChoice.Quality), CPU q$($script:HybridCpuQuality) ($CpuProbeWorkers workers)"
+            }
         }
         else {
             $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
@@ -988,9 +994,14 @@ function Invoke-MangaBatch {
         }
 
     }
+    $selectedCpuProbeWorkers = 0
+    if ($ConversionMode -eq 'Hybrid') {
+        $selectedCpuProbeWorkers = Select-CpuProbeWorkers -Requested $CpuProbeWorkers -Interactive:(-not [Console]::IsInputRedirected)
+        if ($null -eq $selectedCpuProbeWorkers) { return }
+    }
     if ($ConversionMode -in @('GPU','Hybrid')) {
         $workers=$GpuWorkers
-        Write-Host "Experimental $ConversionMode : GPU $GpuWorkers / CPU $(if ($ConversionMode -eq 'Hybrid') {$CpuWorkers} else {0}), logged CPU fallback enabled"
+        Write-Host "Experimental $ConversionMode : GPU $GpuWorkers / CPU full-pass $(if ($ConversionMode -eq 'Hybrid') {$CpuWorkers} else {0}) / CPU quality-probe $selectedCpuProbeWorkers; logged CPU fallback enabled"
     }
     $encoder = $null
     $decoder = $null
@@ -1197,7 +1208,7 @@ function Invoke-MangaBatch {
                     $auto = Invoke-AutoSizeAvif -Entries $entries -Encoder $encoder -Decoder $decoder `
                         -Workers $workers -ScratchDir (Join-Path $workDir 'autotune') `
                         -OutputName $outputName -MaxTargetBytes $MaxTargetBytes `
-                        -SampleSafetyBytes $SampleSafetyBytes -StageTimes $stageTimes
+                        -SampleSafetyBytes $SampleSafetyBytes -StageTimes $stageTimes -CpuProbeWorkers $selectedCpuProbeWorkers
                     $entries = $auto.Entries
                     $converted = $auto.Converted
                     $winningQuality = $auto.Quality
@@ -1295,7 +1306,7 @@ function Invoke-MangaBatch {
                     foreach ($key in $stageTimes.Keys) { $stageSeconds[$key]=$stageTimes[$key].TotalSeconds }
                     $report=[ordered]@{ Mode=$ConversionMode; Status=$reportStatus; Input=$item.FullName;
                         Output=$output; TotalSeconds=$volumeTimer.Elapsed.TotalSeconds; FinalBytes=$finalBytes;
-                        GpuWorkers=$GpuWorkers; CpuWorkers=$(if ($ConversionMode -eq 'Hybrid') {$CpuWorkers} else {0});
+                        GpuWorkers=$GpuWorkers; CpuWorkers=$(if ($ConversionMode -eq 'Hybrid') {$CpuWorkers} else {0}); CpuProbeWorkers=$selectedCpuProbeWorkers;
                         GpuQuality=$winningQuality; CpuQuality=$script:HybridCpuQuality;
                         SizeRetries=[Math]::Max(0,@($script:EncodePasses | Where-Object { $_.Phase -eq 'Full' }).Count-1);
                         Stages=$stageSeconds; Passes=@($script:EncodePasses.ToArray()) }
