@@ -19,7 +19,13 @@ function Get-MangaStartupBannerLines {
 
     # Never emit escape codes or Unicode blocks to redirected/plain/narrow output.
     if (-not $EnableAnsi -or $Width -lt 60) {
-        return @('BookConverter', "AVIF / CBZ | $ModeLabel")
+        $name = if ($Width -ge 13) { 'BookConverter' } elseif ($Width -ge 4) { 'BOOK' } else { 'BC' }
+        $caption = "AVIF / CBZ | $ModeLabel"
+        if ($Width -lt $caption.Length) { $caption = 'AVIF / CBZ' }
+        if ($Width -lt $caption.Length) { $caption = 'AVIF' }
+        if ($Width -lt $caption.Length) { $caption = '' }
+        if ($Width -lt $name.Length) { $name = $name.Substring(0,[Math]::Max(0,$Width)) }
+        return @($name,$caption)
     }
 
     # Compact 5x5 pixel font; 2 words keep the width at 55 terminal cells.
