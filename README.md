@@ -5,7 +5,7 @@ Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-M
 ## プロジェクトについて
 
 - **実装はWindows PowerShell 5.1とBAT**。Tauri/Rustへの移行は行いません。
-- CUIには全巻の進捗、現在工程、AVIFエンコード枚数と終了集計を表示します。変換後は同じCUIで次の作品のパス入力を待ち、`q` / `exit` で終了します。
+- CUIには全巻の進捗、現在工程、AVIFエンコード枚数と終了集計、**変換所要時間（HH:MM:SS.1桁）**を表示します。時間はシリーズ名・並列数の入力後から完了集計まで（解凍・品質探索・CBZ保存・検証を含む）を測定します。変換後は同じCUIで次の作品のパス入力を待ち、`q` / `exit` で終了します。
 - GitHubには第三者の `avifenc.exe` バイナリを含めていません。必要な場合は従来の自動取得、または `tools\avifenc.exe` への配置を利用してください。
 - 開発計画は [DOCS/DEVELOPMENT_PLAN.md](DOCS/DEVELOPMENT_PLAN.md) を参照してください。
 
