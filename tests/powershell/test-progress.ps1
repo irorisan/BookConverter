@@ -44,6 +44,31 @@ function Write-Progress {
         PercentComplete = $PercentComplete; Completed = [bool]$Completed
     })
 }
+# PowerShell 7.6 defaults to Minimal; the nested classic bars must be
+# explicitly selected for ConsoleHost and Windows Terminal.
+Initialize-MangaProgress
+Assert-Eq ([string]$PSStyle.Progress.View) 'Classic' 'PowerShell 7.6 nested progress view'
+
+# Nested page progress must always use the parent's ID and real completed counts.
+Write-MangaPageProgress -Completed 0 -Total 40 -Activity 'AVIF本変換'
+Write-MangaPageProgress -Completed 12 -Total 40 -Activity 'AVIF本変換'
+Write-MangaPageProgress -Completed 40 -Total 40 -Activity 'AVIF本変換' -Done
+Assert-Eq $script:progressCalls.Count 3 'three page progress calls'
+Assert-Eq $script:progressCalls[0].ParentId 1 'page parent ID'
+Assert-Eq $script:progressCalls[0].Id 2 'page ID'
+Assert-Eq $script:progressCalls[0].PercentComplete 0 'page start percent'
+Assert-Eq $script:progressCalls[1].PercentComplete 30 'page completed percent'
+Assert-Eq $script:progressCalls[2].Completed $true 'page progress completed'
+$script:progressCalls.Clear()
+
+$hybridAstErrors=$null
+$hybridAstTokens=$null
+$hybridAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'scripts/Hybrid-Functions.ps1'),[ref]$hybridAstTokens,[ref]$hybridAstErrors)
+if($hybridAstErrors){throw $hybridAstErrors[0]}
+$encodeNode=$hybridAst.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-HybridEncode'},$true)
+$emits=@($encodeNode.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Write-MangaPageProgress'},$true))
+if($emits.Count -lt 1){throw 'Hybrid GPU/CPU conversion must update the nested page progress'}
+
 Write-MangaOverallProgress -Completed 1 -Total 4 -Name '作品 v02.cbz'
 Assert-Eq $script:progressCalls.Count 1 'one overall call'
 Assert-Eq $script:progressCalls[0].Id 1 'overall id'
