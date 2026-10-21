@@ -123,17 +123,20 @@ BookConverter
 
 ```text
 BookConverter (Windows)
-  Convert-Manga.bat                 # 既存形式のドラッグ＆ドロップ起動
-       |
-       v
-  Convert-Manga.ps1                 # CUI待機ループと既存変換処理
-       |-- 初回BAT引数を1バッチとして実行
-       |-- 終了集計 → 次入力待機 → 新バッチ初期化 → 再実行
-       |-- 状態報告 / 進捗表示      # PowerShell標準機能中心、必要分のみ整理
-       |-- EPUB処理                 # 既存スクリプトの役割を維持
-       |-- Input / Zip PS1          # 文字列パス解釈 / Store書き込み
-       |-- WinRAR / dwebp / avifenc # 既存の外部ツール呼び出し
-       +-- avif変換cbz/            # 完成品、原本は不変更
+  Convert-Manga.bat                  # CPU / 漫画
+  Convert-Manga-Magazine.bat         # CPU / 雑誌
+  Convert-Manga-GPU.bat              # NVENC / 漫画
+  Convert-Manga-Magazine-GPU.bat     # NVENC / 雑誌
+  Update-BookConverter.bat           # 手動main更新（個人用）
+  scripts/
+    Convert-Manga.ps1                # CUI待機ループと既存変換処理
+    Convert-Manga-Epub.ps1           # EPUB画像抽出
+    Convert-Manga-Input.ps1          # 入力パス処理
+    Convert-Manga-Progress.ps1       # 進捗表示
+    Convert-Manga-Zip.ps1            # ZIP Store
+    GPU-Functions.ps1                # NVENCエンコードと検証
+    Update-BookConverter.ps1         # 更新スクリプト
+  tools/                             # ローカルのffmpeg/avifenc/dwebp（更新対象外）
 ```
 
 変換本体はPR #5でmainに登録済み。分割のためだけに複数モジュールへ分けたり、不要なアプリ基盤を導入したりしない。
