@@ -8,6 +8,11 @@ $script:fakeCalls=[System.Collections.Generic.List[object]]::new()
 $script:scenario='normal'
 $script:HybridCpuQuality=95
 function Write-MangaStage {param([string]$Name,[string]$Stage)}
+$script:probeProgress=[System.Collections.Generic.List[object]]::new()
+function Write-MangaPageProgress {
+    param([int]$Completed,[int]$Total,[string]$Activity,[string]$Unit,[switch]$Done)
+    $script:probeProgress.Add([pscustomobject]@{Completed=$Completed;Total=$Total;Activity=$Activity;Unit=$Unit;Done=[bool]$Done})
+}
 function Copy-VolumeEntries {
     param([System.Collections.Generic.List[object]]$Entries)
     $copies=[System.Collections.Generic.List[object]]::new()
@@ -30,7 +35,7 @@ function Invoke-ParallelAvif {
         $e=$pending[$i]
         $backend=if($CpuProbe){'Cpu'}elseif($GpuOnly){'Gpu'}else{if($e.EntryName -match 'page(1|7)\.avif'){'Cpu'}else{'Gpu'}}
         $bytes=if($kind -eq 'calibrate'){
-            if($Quality -ge 70){400}elseif($Quality -ge 50){150}else{100}
+            if($script:scenario -eq 'q40'){if($Quality -ge 70){400}elseif($Quality -ge 50){300}else{180}}elseif($Quality -ge 70){400}elseif($Quality -ge 50){150}else{100}
         }elseif($script:scenario -eq 'oversize'){
             if($kind -eq 'initial'){1500}elseif($kind -eq 'cpu-retry'){200}else{700}
         }else{400}
@@ -59,6 +64,18 @@ try{
     $gpuProbe=[pscustomobject]@{Quality=80;Cache=$cache}
     $cal=Invoke-GpuLedCpuCalibration -Entries $entries -GpuProbe $gpuProbe -Encoder 'unused' -ScratchDir $tmp -VolumeName 'test'
     Assert ($cal.Quality -eq 50) 'Calibration did not select the first size-compatible CPU quality'
+    Assert (@($script:probeProgress | Where-Object {$_.Unit -eq '試行' -and $_.Completed -eq 2 -and $_.Total -eq 3}).Count -eq 1) 'CPU calibration iteration progress missing'
+    Assert ($script:probeProgress[-1].Done) 'CPU calibration progress not closed after short search'
+    $script:probeProgress.Clear()
+    $script:scenario='q40'
+    $script:fakeCalls.Clear()
+    $cal40=Invoke-GpuLedCpuCalibration -Entries $entries -GpuProbe $gpuProbe -Encoder 'unused' -ScratchDir (Join-Path $tmp 'q40-case') -VolumeName 'q40-case'
+    Assert ($cal40.Quality -eq 40) 'CPU calibration should prefer q40 instead of falling to q30'
+    Assert (@($script:fakeCalls | Where-Object {$_.Kind -eq 'calibrate'}).Count -eq 3) 'CPU q40 calibration should try exactly three qualities'
+    Assert (@($script:fakeCalls | Where-Object {$_.Quality -eq 30}).Count -eq 0) 'q30 must not be probed as a normal baseline'
+    $script:scenario='normal'
+    $script:probeProgress.Clear()
+    $script:fakeCalls.Clear()
     Assert (@($cal.Cache).Count -eq 3) 'Expected three CPU calibration pages'
     Assert (@($script:fakeCalls | Where-Object {$_.Kind -eq 'calibrate'}).Count -eq 2) 'CPU calibration must use only two rounds here'
     Assert (@($cal.Cache | Where-Object {$_.EncodedBy -ne 'Cpu'}).Count -eq 0) 'CPU calibration cache backend missing'
