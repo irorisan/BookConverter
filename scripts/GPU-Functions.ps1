@@ -16,8 +16,8 @@ function Get-GpuEncodeArguments {
         [Parameter(Mandatory=$true)][string]$OutputPath
     )
     $cq = Convert-GpuQualityToCq -Quality $Quality
-    # Explicit AVIF muxer; p4 is the speed/quality compromise validated by user.
-    return ('-hide_banner -loglevel error -y -i "{0}" -c:v av1_nvenc -rc vbr -cq {1} -b:v 0 -preset p4 -tune hq -pix_fmt yuv420p -frames:v 1 -f avif "{2}"' -f $InputPath, $cq, $OutputPath)
+    # Explicit AVIF muxer; p7 is the fixed high-quality preset for GPU mode.
+    return ('-hide_banner -loglevel error -y -i "{0}" -c:v av1_nvenc -rc vbr -cq {1} -b:v 0 -preset p7 -tune hq -pix_fmt yuv420p -frames:v 1 -f avif "{2}"' -f $InputPath, $cq, $OutputPath)
 }
 
 function Find-FFmpegNvenc {
