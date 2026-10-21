@@ -2,6 +2,13 @@
 $ErrorActionPreference = 'Stop'
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repo 'scripts/Hybrid-QualityParallel.ps1')
+. (Join-Path $repo 'scripts/Convert-Manga-Progress.ps1')
+$script:taskProgress=[System.Collections.Generic.List[object]]::new()
+function Write-Progress {
+    param([int]$Id,[int]$ParentId,[string]$Activity,[string]$Status,[int]$PercentComplete,[switch]$Completed)
+    $script:taskProgress.Add([pscustomobject]@{Id=$Id;ParentId=$ParentId;Activity=$Activity;
+        Status=$Status;PercentComplete=$PercentComplete;Done=[bool]$Completed})
+}
 
 # Interactive and argument-based probe selection are independent of full-pass CPU workers.
 $script:answers=[System.Collections.Generic.Queue[string]]::new()
@@ -32,7 +39,9 @@ function Get-AvifSampleEstimate { param() }
 function Find-AvifQuality {
     param($Entries,[string]$Encoder,[string]$Decoder,[int]$Workers,
         [string]$ScratchDir,[string]$VolumeName,[long]$SampleLimitBytes,
-        [switch]$CpuProbe)
+        [switch]$CpuProbe,
+        [System.Collections.Concurrent.ConcurrentDictionary[string,int]]$ProgressState,
+        [string]$ProgressBackend)
     $backend=if($CpuProbe){'Cpu'}else{'Gpu'}
     [IO.Directory]::CreateDirectory($ScratchDir) | Out-Null
     [IO.File]::WriteAllText((Join-Path $ScratchDir ($backend+'-started')),
@@ -45,6 +54,7 @@ function Find-AvifQuality {
         if($CancelFile -and (Test-Path -LiteralPath $CancelFile)){throw 'Other probe cancelled'}
         Start-Sleep -Milliseconds 40
     }
+    if($null -ne $ProgressState){$ProgressState[$ProgressBackend]=1}
     $q=if($CpuProbe){71}else{83}
     $script:EncodePasses.Add([pscustomobject]@{Phase='Sample';Backend=$backend;GpuPages=$(if($CpuProbe){0}else{12});CpuPages=$(if($CpuProbe){12}else{0})})
     return [pscustomobject]@{
@@ -69,6 +79,12 @@ try {
     if([Math]::Abs($g-$c) -ge 1000){throw 'GPU and CPU probes did not start concurrently'}
     if($before.Elapsed.TotalSeconds -ge 3.5){throw 'Quality search took as long as serial execution'}
     if($entries[0].SourcePath -ne 'source.png'){throw 'Original entry was modified'}
+    $qualityTicks=@($script:taskProgress | Where-Object {$_.Id -eq 2 -and
+        $_.Status -match 'GPU.*CPU' -and $_.PercentComplete -gt 0})
+    if($qualityTicks.Count -lt 1){throw 'Parent process did not render completed concurrent quality probes'}
+    if(@($script:taskProgress | Where-Object {$_.Id -eq 2 -and $_.Done}).Count -lt 1){
+        throw 'Concurrent quality progress must be cleared at end'
+    }
     foreach($n in @(0,8)){
         $probeDir=Join-Path $temp ('workers-'+$n)
         $probe=Invoke-HybridQualitySearch -Entries $entries -Encoder 'unused.exe' -CpuEncoder 'unused.exe' -GpuWorkers 12 -CpuProbeWorkers $n -ScratchDir $probeDir -VolumeName ('workers-'+$n) -SampleLimitBytes 68MB -ScriptRoot (Join-Path $repo 'scripts') -EncoderTimeoutSeconds 5

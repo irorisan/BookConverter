@@ -26,7 +26,11 @@ function Invoke-GpuLedCpuCalibration {
     }
     if($gpuBytes -le 0){throw 'Invalid GPU calibration reference sizes'}
 
-    foreach($quality in @(70,50,30)){
+    $calibrationQualities=@(70,50,40)
+    Write-MangaPageProgress -Completed 0 -Total $calibrationQualities.Count -Activity 'CPU校正' -Unit '試行'
+    try {
+    for($round=0;$round -lt $calibrationQualities.Count;$round++){
+        $quality=$calibrationQualities[$round]
         $selected=[System.Collections.Generic.List[object]]::new()
         foreach($ref in $references){
             $source=$Entries[[int]$ref.Index]
@@ -55,9 +59,10 @@ function Invoke-GpuLedCpuCalibration {
             })
         }
         Write-Host ('  CPU校正 q{0}: GPU代表 {1:N0} bytes / CPU代表 {2:N0} bytes' -f $quality,$gpuBytes,$cpuBytes)
-        if($cpuBytes -le $gpuBytes -or $quality -eq 30){
+        Write-MangaPageProgress -Completed ($round+1) -Total $calibrationQualities.Count -Activity 'CPU校正' -Unit '試行'
+        if($cpuBytes -le $gpuBytes -or $quality -eq 40){
             if($cpuBytes -gt $gpuBytes){
-                Write-Warning 'CPU q30でもGPU代表容量を超過。最終容量検査と差分再試行で保護します。'
+                Write-Warning 'CPU q40でもGPU代表容量を超過。最終容量超過時のみCPU担当ページをq30まで差分再変換します。'
             }
             return [pscustomobject]@{
                 Quality=[int]$quality
@@ -68,6 +73,10 @@ function Invoke-GpuLedCpuCalibration {
         }
     }
     throw 'CPU calibration did not produce a usable sample'
+    }
+    finally {
+        Write-MangaPageProgress -Activity 'CPU校正' -Done
+    }
 }
 
 # Return a working copy with only the named encoder's pages marked for redo.

@@ -59,6 +59,16 @@ Assert-Eq $script:progressCalls[0].Id 2 'page ID'
 Assert-Eq $script:progressCalls[0].PercentComplete 0 'page start percent'
 Assert-Eq $script:progressCalls[1].PercentComplete 30 'page completed percent'
 Assert-Eq $script:progressCalls[2].Completed $true 'page progress completed'
+Assert-Eq $script:progressCalls[1].Activity 'BookConverter / 現在のタスク進捗' 'current task activity'
+Assert-Eq $script:progressCalls[1].Status.Contains('AVIF本変換') $true 'current stage in status'
+$script:progressCalls.Clear()
+Write-MangaPageProgress -Completed 0 -Total 5 -Activity 'GPU品質探索' -Unit '試行'
+Write-MangaPageProgress -Completed 2 -Total 5 -Activity 'GPU品質探索' -Unit '試行'
+Assert-Eq $script:progressCalls[1].PercentComplete 40 'quality probe percent'
+Assert-Eq $script:progressCalls[1].Status.Contains('2 / 5 試行') $true 'quality probe status not page count'
+Write-MangaPageProgress -Activity 'GPU品質探索' -Done
+Assert-Eq $script:progressCalls[-1].Completed $true 'quality probe must clean up on completion'
+
 $script:progressCalls.Clear()
 
 $hybridAstErrors=$null
@@ -81,6 +91,8 @@ if($hybridCalls.Count -ne 1 -or $hybridCalls[0].Extent.Text -notmatch '-TrackPro
 Write-MangaOverallProgress -Completed 1 -Total 4 -Name '作品 v02.cbz'
 Assert-Eq $script:progressCalls.Count 1 'one overall call'
 Assert-Eq $script:progressCalls[0].Id 1 'overall id'
+Assert-Eq $script:progressCalls[0].Activity 'BookConverter / 全体のタスク進捗' 'overall task activity'
+
 Assert-Eq $script:progressCalls[0].PercentComplete 25 'overall progress'
 if (-not $script:progressCalls[0].Status.Contains('作品 v02.cbz')) { throw 'output name missing in overall status' }
 Write-MangaOverallProgress -Completed 4 -Total 4 -Done

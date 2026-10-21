@@ -634,8 +634,15 @@ function Find-AvifQuality {
         [string]$VolumeName,
         [long]$SampleLimitBytes,
         [ValidateRange(30, 95)][int]$MaxQuality = 95,
-        [switch]$CpuProbe
+        [switch]$CpuProbe,
+        [System.Collections.Concurrent.ConcurrentDictionary[string,int]]$ProgressState,
+        [string]$ProgressBackend = 'Gpu',
+        [switch]$ShowProgress
     )
+    if ($ShowProgress) {
+        Write-MangaPageProgress -Completed 0 -Total 5 -Activity 'GPU品質探索' -Unit '試行'
+    }
+    try {
     $low = 30
     $high = $MaxQuality
     $bestProbe = $null
@@ -646,6 +653,11 @@ function Find-AvifQuality {
         $probe = Get-AvifSampleEstimate -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
             -Quality $candidate -Workers $Workers -ScratchDir $ScratchDir -VolumeName $VolumeName -CpuProbe:$CpuProbe
         $probes.Add($probe)
+        # Only completed quality probes count toward the active progress bar.
+        if ($null -ne $ProgressState) { $ProgressState[$ProgressBackend] = $iteration + 1 }
+        if ($ShowProgress) {
+            Write-MangaPageProgress -Completed ($iteration + 1) -Total 5 -Activity 'GPU品質探索' -Unit '試行'
+        }
         Write-Host ('  品質試算 Q{0}: 推定{1:N1} MiB / 内部目標{2:N1} MiB' -f `
             $candidate, ($probe.EstimatedBytes / 1MB), ($SampleLimitBytes / 1MB))
         if ($probe.EstimatedBytes -le $SampleLimitBytes) {
@@ -667,6 +679,10 @@ function Find-AvifQuality {
         EstimatedBytes = [long]$bestProbe.EstimatedBytes
         Probe = $bestProbe
         Probes = $probes.ToArray()
+    }
+    }
+    finally {
+        if ($ShowProgress) { Write-MangaPageProgress -Activity 'GPU品質探索' -Done }
     }
 }
 
@@ -733,11 +749,12 @@ function Invoke-AutoSizeAvif {
         else {
             $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
                 -Workers $Workers -ScratchDir $ScratchDir -VolumeName $OutputName `
-                -SampleLimitBytes $sampleLimit
+                -SampleLimitBytes $sampleLimit -ShowProgress
         }
     }
     finally {
         $qualityTimer.Stop()
+        Write-MangaPageProgress -Activity '品質探索' -Done
         if ($null -ne $StageTimes) { $StageTimes['品質探索'] += $qualityTimer.Elapsed }
     }
     $quality = $qualityChoice.Quality

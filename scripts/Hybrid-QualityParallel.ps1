@@ -65,7 +65,8 @@ function Invoke-HybridQualitySearch {
         $volume=if($cpu){"$($context.VolumeName) / CPU"}else{[string]$context.VolumeName}
         $choice=Find-AvifQuality -Entries $context.Entries -Encoder $context.Encoder -Decoder $context.Decoder `
             -Workers $workers -ScratchDir $context.ScratchDir -VolumeName $volume `
-            -SampleLimitBytes $context.SampleLimitBytes -CpuProbe:$cpu
+            -SampleLimitBytes $context.SampleLimitBytes -CpuProbe:$cpu `
+            -ProgressState $context.ProgressState -ProgressBackend $context.Backend
         [pscustomobject]@{
             Backend=$context.Backend
             Choice=$choice
@@ -73,6 +74,10 @@ function Invoke-HybridQualitySearch {
         }
     }
 
+    $progress=[System.Collections.Concurrent.ConcurrentDictionary[string,int]]::new()
+    $progress['Gpu']=0
+    $progress['Cpu']=0
+    $totalProbes=if($CpuProbeWorkers -gt 0){10}else{5}
     $jobs=[System.Collections.Generic.List[object]]::new()
     $pending=[System.Collections.Generic.List[object]]::new()
     $results=@{}
@@ -96,14 +101,22 @@ function Invoke-HybridQualitySearch {
                 CancelFile=$probeCancelFile
                 EncoderTimeoutSeconds=$EncoderTimeoutSeconds
                 Definitions=$definitions
+                ProgressState=$progress
             }
             $job=Start-ThreadJob -Name ("QualityProbe-"+$backend) -ArgumentList $context -ScriptBlock $worker
             $jobs.Add($job)
             $pending.Add($job)
         }
+        Write-MangaPageProgress -Completed 0 -Total $totalProbes -Activity '品質探索' -Unit '試行' `
+            -Detail $(if($CpuProbeWorkers -eq 0){'GPU 0/5'}else{'GPU 0/5・CPU 0/5'})
         while($pending.Count -gt 0){
             if($CancelFile -and (Test-Path -LiteralPath $CancelFile)){throw 'Quality search cancelled'}
             $finished=Wait-Job -Job $pending.ToArray() -Any -Timeout 1
+            $doneGpu=$progress['Gpu']
+            $doneCpu=$progress['Cpu']
+            $detail=if($CpuProbeWorkers -eq 0){"GPU $doneGpu/5"}else{"GPU $doneGpu/5・CPU $doneCpu/5"}
+            Write-MangaPageProgress -Completed ($doneGpu+$doneCpu) -Total $totalProbes `
+                -Activity '品質探索' -Unit '試行' -Detail $detail
             if($null -eq $finished){continue}
             if($finished.State -ne 'Completed'){
                 # Receive-Job preserves the actual encoder/probe exception.
@@ -136,6 +149,7 @@ function Invoke-HybridQualitySearch {
         }
     }
     finally{
+        Write-MangaPageProgress -Activity '品質探索' -Done
         if(-not $succeeded -and $jobs.Count -gt 0){
             # The scheduler polls this file and disposes all active encoders in finally.
             New-Item -ItemType File -Path $probeCancelFile -Force | Out-Null

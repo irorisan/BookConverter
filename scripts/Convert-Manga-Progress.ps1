@@ -9,14 +9,17 @@ function Initialize-MangaProgress {
 # Never count exploratory quality probes as completed volume pages.
 function Write-MangaPageProgress {
     param([int]$Completed, [int]$Total, [string]$Activity='AVIF並列変換',
-          [int]$Workers=0, [switch]$Done)
+          [int]$Workers=0, [string]$Unit='枚', [string]$Detail='', [switch]$Done)
+    $heading = 'BookConverter / 現在のタスク進捗'
     if ($Done) {
-        Write-Progress -Id 2 -ParentId 1 -Activity $Activity -Completed
+        Write-Progress -Id 2 -ParentId 1 -Activity $heading -Completed
         return
     }
-    $status = '{0} / {1} 枚' -f ([Math]::Min($Total, [Math]::Max(0, $Completed))), $Total
+    $status = '{0} | {1} / {2} {3}' -f $Activity,
+        ([Math]::Min($Total, [Math]::Max(0, $Completed))), $Total, $Unit
+    if ($Detail) { $status += " | $Detail" }
     if ($Workers -gt 0) { $status += '（並列数 {0}）' -f $Workers }
-    Write-Progress -Id 2 -ParentId 1 -Activity $Activity -Status $status `
+    Write-Progress -Id 2 -ParentId 1 -Activity $heading -Status $status `
         -PercentComplete (Get-MangaProgressPercent -Completed $Completed -Total $Total)
 }
 
@@ -37,11 +40,11 @@ function Format-MangaElapsed {
 function Write-MangaOverallProgress {
     param([int]$Completed, [int]$Total, [string]$Name = '', [switch]$Done)
     if ($Done) {
-        Write-Progress -Id 1 -Activity 'BookConverter / 全体進捗' -Completed
+        Write-Progress -Id 1 -Activity 'BookConverter / 全体のタスク進捗' -Completed
         return
     }
     $status = '{0} / {1} 件処理済み | {2}' -f $Completed, $Total, $Name
-    Write-Progress -Id 1 -Activity 'BookConverter / 全体進捗' -Status $status `
+    Write-Progress -Id 1 -Activity 'BookConverter / 全体のタスク進捗' -Status $status `
         -PercentComplete (Get-MangaProgressPercent -Completed $Completed -Total $Total)
 }
 
