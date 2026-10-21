@@ -30,6 +30,37 @@ Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-M
 - 出力先は両方式とも `avif変換cbz`。既存の同名作品があれば安全のためスキップするので、比較時は生成済みのCBZを別の場所に移してから再変換してください。
 - KavitaやMihonでの表紙・本文表示は最初の数巻で確認することを推奨します。Windows/NVIDIA GPU実機テストはCIでは実行していません。
 
+## フォルダ構造と個人用アップデーター
+
+```text
+BookConverter/
+├── Convert-Manga.bat
+├── Convert-Manga-GPU.bat
+├── Convert-Manga-Magazine.bat
+├── Convert-Manga-Magazine-GPU.bat
+├── Update-BookConverter.bat
+├── scripts/
+│   ├── Convert-Manga.ps1
+│   ├── Convert-Manga-Epub.ps1
+│   ├── Convert-Manga-Input.ps1
+│   ├── Convert-Manga-Progress.ps1
+│   ├── Convert-Manga-Zip.ps1
+│   ├── GPU-Functions.ps1
+│   └── Update-BookConverter.ps1
+└── tools/
+    ├── ffmpeg.exe    （GPU版）
+    ├── avifenc.exe   （CPU版）
+    └── dwebp.exe     （WebP入力時）
+```
+
+**自分用の更新機能**：`Update-BookConverter.bat` を実行すると、GitHub `irorisan/BookConverter` の**最新main**をZIPで取得して更新します。Gitコマンドは不要です。
+
+- ローカルの `tools/` と `.git/`、漫画入力・出力フォルダ、GitHub管理対象外のファイルは削除・更新しません。
+- 旧GPUテストZIPに存在した `Install-Latest-GitHub-GPU-Test.bat` / `Install-Latest-GitHub-GPU-Test.ps1` と、移動前のルート直下の6種類のPS1は更新時に取り除きます。
+- 更新対象のファイルは一時的にバックアップし、途中で失敗すると書き換えたものを元に戻します。
+- 変換中は実行せず、変換終了後に更新してください。GitHubへの接続が必要です。
+- GitHub本体に組み込まれるバックグラウンド更新機能ではありません。BATから手動実行する個人用ユーティリティです。
+
 ## 漫画と雑誌のBATを使い分ける
 
 | 起動ファイル | 入れるもの | 作品名の扱い |
@@ -101,7 +132,7 @@ Weekly_Ascii_2026-10-20.epub → Weekly_Ascii_2026-10-20.cbz
 
 ## 使い方
 
-1. ZIPを展開し、`Convert-Manga.bat`・`Convert-Manga-Magazine.bat`・`Convert-Manga.ps1`・`Convert-Manga-Epub.ps1`・`Convert-Manga-Progress.ps1`・`Convert-Manga-Input.ps1`・`Convert-Manga-Zip.ps1` を同じフォルダに置きます（ZIPを展開したまま使用）。
+1. ZIPを展開して `BookConverter/` のBATを起動します。PowerShellファイルは `scripts/` にまとめて配置します。`tools/` に外部エンコーダーを置きます。
 2. 漫画は `Convert-Manga.bat`、雑誌は `Convert-Manga-Magazine.bat` を選び、EPUB・CBZ・ZIP・RARや巻フォルダをドラッグ＆ドロップします（複数可）。引数なし起動の場合は待機プロンプトに絶対パスを貼り付けてEnter。空白を含む複数パスはそれぞれダブルクォートで囲みます。
 3. **漫画BATでは巻数の有無にかかわらず作品名を1回入力**。Enterなら最初の検出名を採用。**雑誌BATでは名前入力なし**で元名を保持します。
 4. **並列数**を入力。Enterなら自動設定です。
