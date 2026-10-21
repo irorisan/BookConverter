@@ -28,7 +28,8 @@ function Format-MangaProgressStatus {
     if($ElapsedSeconds -gt 0 -and $done -gt 0){
         $speed=('{0:F2} {1}/s' -f ($done/$ElapsedSeconds),$Unit)
     }
-    $elapsed=Format-MangaElapsed -Duration ([TimeSpan]::FromSeconds([Math]::Max(0,$ElapsedSeconds)))
+    $milliseconds=[long][Math]::Floor([Math]::Max(0,$ElapsedSeconds)*1000)
+    $elapsed=Format-MangaElapsed -Duration ([TimeSpan]::FromMilliseconds($milliseconds))
     $status+=' | 速度 '+$speed+' | 経過 '+$elapsed
     if($Width -ge 155){
         if($Detail){$status+=" | $Detail"}
@@ -103,7 +104,14 @@ function Write-MangaOverallProgress {
         (Format-MangaElapsed -Duration $script:MangaBatchClock.Elapsed)
     $width=Get-MangaProgressWidth
     if($width -lt 55){$status='{0} / {1} 件 | {2}%' -f $done,$Total,(Get-MangaProgressPercent -Completed $Completed -Total $Total)}
-    elseif($width -ge 135 -and $Name){$status+=" | $Name"}
+    elseif($width -ge 80 -and $Name){
+        # Keep the title visible without letting Japanese names swallow the bar.
+        $maxName=[Math]::Max(0,[int][Math]::Floor(($width-$status.Length-8)/2))
+        if($maxName -gt 0){
+            $shown=if($Name.Length -gt $maxName){$Name.Substring(0,[Math]::Max(0,$maxName-1))+'…'}else{$Name}
+            $status+=" | $shown"
+        }
+    }
     Write-Progress -Id 1 -Activity $heading -Status $status `
         -PercentComplete (Get-MangaProgressPercent -Completed $Completed -Total $Total)
 }
