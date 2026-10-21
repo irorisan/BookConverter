@@ -336,7 +336,8 @@ function Invoke-ParallelAvif {
         [Parameter(Mandatory = $true)][int]$Quality,
         [Parameter(Mandatory = $true)][ValidateRange(1, 16)][int]$Workers,
         [Parameter(Mandatory = $true)][string]$TempDir,
-        [Parameter(Mandatory = $true)][string]$OutputName
+        [Parameter(Mandatory = $true)][string]$OutputName,
+        [System.Collections.IDictionary]$StageTimes
     )
 
     $pending = @($Entries | Where-Object { $_.NeedsConversion })
@@ -354,6 +355,7 @@ function Invoke-ParallelAvif {
     $activity = "AVIF並列変換: $OutputName"
     Write-Progress -Id 2 -ParentId 1 -Activity $activity -Status "0 / $($pending.Count)枚（並列数 $Workers）" -PercentComplete 0
 
+    $encodeTimer = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         while ($finished -lt $pending.Count) {
             while ($running.Count -lt $Workers -and $next -lt $pending.Count) {
@@ -456,9 +458,18 @@ function Invoke-ParallelAvif {
             finally { $job.Process.Dispose() }
         }
         Write-Progress -Id 2 -ParentId 1 -Activity $activity -Completed
+        $encodeTimer.Stop()
+        if ($null -ne $StageTimes) { $StageTimes['AVIF本変換'] += $encodeTimer.Elapsed }
     }
     if ($GPU) {
-        Invoke-GpuVerifyAvifBatch -Paths $gpuVerifyPaths.ToArray() -FFmpeg $Encoder -Workers ([Math]::Min(8, $Workers))
+        $verifyTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            Invoke-GpuVerifyAvifBatch -Paths $gpuVerifyPaths.ToArray() -FFmpeg $Encoder -Workers ([Math]::Min(8, $Workers))
+        }
+        finally {
+            $verifyTimer.Stop()
+            if ($null -ne $StageTimes) { $StageTimes['AVIFデコード検証'] += $verifyTimer.Elapsed }
+        }
     }
     return $finished
 }
@@ -626,7 +637,8 @@ function Invoke-AutoSizeAvif {
         [string]$ScratchDir,
         [string]$OutputName,
         [long]$MaxTargetBytes,
-        [long]$SampleSafetyBytes
+        [long]$SampleSafetyBytes,
+        [System.Collections.IDictionary]$StageTimes
     )
     # ZIPヘッダー・中央ディレクトリエントリによる増分も見込む。
     $zipOverheadBytes = [long]0
@@ -637,9 +649,16 @@ function Invoke-AutoSizeAvif {
     $maxImageBytes = [long][Math]::Max(1, $MaxTargetBytes - $zipOverheadBytes)
     $sampleLimit = [long][Math]::Max(1, $maxImageBytes - $SampleSafetyBytes)
     Write-MangaStage -Name $OutputName -Stage "品質探索"
-    $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
-        -Workers $Workers -ScratchDir $ScratchDir -VolumeName $OutputName `
-        -SampleLimitBytes $sampleLimit
+    $qualityTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
+            -Workers $Workers -ScratchDir $ScratchDir -VolumeName $OutputName `
+            -SampleLimitBytes $sampleLimit
+    }
+    finally {
+        $qualityTimer.Stop()
+        if ($null -ne $StageTimes) { $StageTimes['品質探索'] += $qualityTimer.Elapsed }
+    }
     $quality = $qualityChoice.Quality
     $selectedProbe = $qualityChoice.Probe
     $probes = @($qualityChoice.Probes)
@@ -670,7 +689,8 @@ function Invoke-AutoSizeAvif {
         Write-MangaStage -Name $OutputName -Stage "AVIF全ページ変換（$attempt / 3回, Q$quality）"
         Write-Host "  全ページ変換（$attempt / 最大3回）: 品質$quality / テスト画像再利用 $reusedCount 枚" -ForegroundColor Cyan
         [void](Invoke-ParallelAvif -Entries $trialEntries -Encoder $Encoder -Decoder $Decoder `
-            -Quality $quality -Workers $Workers -TempDir $trialDir -OutputName $OutputName)
+            -Quality $quality -Workers $Workers -TempDir $trialDir -OutputName $OutputName `
+            -StageTimes $StageTimes)
         $actualBytes = [long]0
         foreach ($entry in $trialEntries) { $actualBytes += [long]$entry.Length }
         Write-Host ('  AVIF画像の合計容量: {0:N1} MiB（Q{1}）' -f ($actualBytes / 1MB), $quality)
@@ -871,7 +891,7 @@ function Invoke-MangaBatch {
     Write-Host '元ファイルが60MiB以下: 変換なし（CBZならファイルをそのままコピー）'
     Write-Host '60MiB超: 代表12ページ・最大5回試算で68MiBを目安に品質を選択（上限70MiB）'
     if ($GPU) {
-        Write-Host 'NVENC GPUエンコード: preset p4 / yuv420p / 8並列がデフォルト' -ForegroundColor Cyan
+        Write-Host 'NVENC GPUエンコード: preset p7 / yuv420p / 8並列がデフォルト' -ForegroundColor Cyan
         Write-Host 'GPU変換に失敗した場合、黙ってCPUへ切り替えません。元ファイルは保持します。'
     }
     else { Write-Host 'AVIFエンコード速度: -s 6（従来どおり） / 元CBZは保持して avif変換cbz へ出力' }
@@ -937,6 +957,18 @@ function Invoke-MangaBatch {
             continue
         }
 
+        $stageTimes = [ordered]@{
+            '入力準備' = [TimeSpan]::Zero
+            '展開・EPUB抽出' = [TimeSpan]::Zero
+            '品質探索' = [TimeSpan]::Zero
+            'AVIF本変換' = [TimeSpan]::Zero
+            'AVIFデコード検証' = [TimeSpan]::Zero
+            'CBZ書込・コピー' = [TimeSpan]::Zero
+            'CBZ検証・保存' = [TimeSpan]::Zero
+        }
+        $volumeTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        $prepareTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        $preparationRecorded = $false
         $workDir = Join-Path ([IO.Path]::GetTempPath()) ("MangaCbz_" + [Guid]::NewGuid().ToString('N'))
         $tempCbz = Join-Path $destinationDir ('.manga_' + [Guid]::NewGuid().ToString('N') + '.tmp')
         try {
@@ -952,8 +984,18 @@ function Invoke-MangaBatch {
             # 60MB以下のCBZは中身・ZIP構造を一切変更せず、完成先に原本をコピー。
             if (-not $shouldCompress -and -not $item.IsDirectory -and $item.FullName.ToLowerInvariant().EndsWith('.cbz')) {
                 Write-MangaStage -Name $outputName -Stage "CBZ原本コピー"
-                Copy-Item -LiteralPath $item.FullName -Destination $tempCbz -ErrorAction Stop
-                [IO.File]::Move($tempCbz, $output)
+                $prepareTimer.Stop()
+                $stageTimes['入力準備'] = $prepareTimer.Elapsed
+                $preparationRecorded = $true
+                $copyTimer = [System.Diagnostics.Stopwatch]::StartNew()
+                try {
+                    Copy-Item -LiteralPath $item.FullName -Destination $tempCbz -ErrorAction Stop
+                    [IO.File]::Move($tempCbz, $output)
+                }
+                finally {
+                    $copyTimer.Stop()
+                    $stageTimes['CBZ書込・コピー'] += $copyTimer.Elapsed
+                }
                 Write-Host ('[OK] {0}（変換なし、そのままコピー / {1:N1} MB）' -f $outputName, ($inputBytes / 1MB)) -ForegroundColor Green
                 $success++
                 continue
@@ -964,7 +1006,16 @@ function Invoke-MangaBatch {
             if ($isEpub) {
                 Write-MangaStage -Name $outputName -Stage "EPUB読書順抽出"
                 Write-Host "EPUB読書順を解析: $($item.FullName)"
-                $images = @(Get-EpubPageImages -EpubPath $item.FullName -ExtractionDir (Join-Path $workDir 'epub_pages'))
+                $prepareTimer.Stop()
+                $extractTimer = [System.Diagnostics.Stopwatch]::StartNew()
+                try {
+                    $images = @(Get-EpubPageImages -EpubPath $item.FullName -ExtractionDir (Join-Path $workDir 'epub_pages'))
+                }
+                finally {
+                    $extractTimer.Stop()
+                    $stageTimes['展開・EPUB抽出'] += $extractTimer.Elapsed
+                    $prepareTimer.Start()
+                }
                 Write-Host "  本文ページ順を取得: $($images.Count)枚（001から連番化）" -ForegroundColor Cyan
             }
             else {
@@ -976,9 +1027,18 @@ function Invoke-MangaBatch {
                     Write-MangaStage -Name $outputName -Stage "アーカイブ展開"
                     Write-Host "解凍: $($item.FullName)"
                     # WinRAR x: preserve internal paths, skip overwrites inside this private temp directory.
-                    & $WinRAR x -y -o- -inul $item.FullName ($workDir + '\') | Out-Null
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "WinRARでの展開に失敗しました（終了コード: $LASTEXITCODE）"
+                    $prepareTimer.Stop()
+                    $extractTimer = [System.Diagnostics.Stopwatch]::StartNew()
+                    try {
+                        & $WinRAR x -y -o- -inul $item.FullName ($workDir + '\') | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            throw "WinRARでの展開に失敗しました（終了コード: $LASTEXITCODE）"
+                        }
+                    }
+                    finally {
+                        $extractTimer.Stop()
+                        $stageTimes['展開・EPUB抽出'] += $extractTimer.Elapsed
+                        $prepareTimer.Start()
                     }
                     $sourceDir = $workDir
                 }
@@ -1028,6 +1088,10 @@ function Invoke-MangaBatch {
                 })
             }
 
+            $prepareTimer.Stop()
+            $stageTimes['入力準備'] = $prepareTimer.Elapsed
+            $preparationRecorded = $true
+
             $converted = 0
             $formatLabel = '変換なし'
             $winningQuality = 0
@@ -1044,7 +1108,7 @@ function Invoke-MangaBatch {
                     $auto = Invoke-AutoSizeAvif -Entries $entries -Encoder $encoder -Decoder $decoder `
                         -Workers $workers -ScratchDir (Join-Path $workDir 'autotune') `
                         -OutputName $outputName -MaxTargetBytes $MaxTargetBytes `
-                        -SampleSafetyBytes $SampleSafetyBytes
+                        -SampleSafetyBytes $SampleSafetyBytes -StageTimes $stageTimes
                     $entries = $auto.Entries
                     $converted = $auto.Converted
                     $winningQuality = $auto.Quality
@@ -1062,9 +1126,16 @@ function Invoke-MangaBatch {
             }
 
             Write-MangaStage -Name $outputName -Stage "CBZ書き込み"
-            Write-MangaStoredZip -Path $tempCbz -Entries $entries
+            $writeTimer = [System.Diagnostics.Stopwatch]::StartNew()
+            try { Write-MangaStoredZip -Path $tempCbz -Entries $entries }
+            finally {
+                $writeTimer.Stop()
+                $stageTimes['CBZ書込・コピー'] += $writeTimer.Elapsed
+            }
 
             Write-MangaStage -Name $outputName -Stage "CBZ検証"
+            $finalizeTimer = [System.Diagnostics.Stopwatch]::StartNew()
+            try {
             $check = [IO.Compression.ZipFile]::OpenRead($tempCbz)
             try {
                 if ($check.Entries.Count -ne $entries.Count) {
@@ -1089,15 +1160,30 @@ function Invoke-MangaBatch {
                 $oversized++
             }
             else { $success++ }
+            }
+            finally {
+                $finalizeTimer.Stop()
+                $stageTimes['CBZ検証・保存'] += $finalizeTimer.Elapsed
+            }
         }
         catch {
             Write-Warning "FAIL: $($item.FullName) / $($_.Exception.Message)"
             $failed++
         }
         finally {
-            # Failed cleanup is fatal: never accept another batch with live work.
-            if (Test-Path -LiteralPath $tempCbz) { Remove-Item -LiteralPath $tempCbz -Force -ErrorAction Stop }
-            if (Test-Path -LiteralPath $workDir) { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction Stop }
+            if (-not $preparationRecorded) {
+                $prepareTimer.Stop()
+                $stageTimes['入力準備'] = $prepareTimer.Elapsed
+            }
+            try {
+                # Failed cleanup is fatal: never accept another batch with live work.
+                if (Test-Path -LiteralPath $tempCbz) { Remove-Item -LiteralPath $tempCbz -Force -ErrorAction Stop }
+                if (Test-Path -LiteralPath $workDir) { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction Stop }
+            }
+            finally {
+                $volumeTimer.Stop()
+                Write-MangaTimingReport -Name $outputName -Stages $stageTimes -Total $volumeTimer.Elapsed
+            }
             $completedItems++
             Write-MangaOverallProgress -Completed $completedItems -Total $Items.Count -Name $outputName
         }

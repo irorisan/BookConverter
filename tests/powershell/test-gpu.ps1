@@ -11,9 +11,10 @@ foreach ($quality in 30..95) {
     $previous = $cq
 }
 $args = Get-GpuEncodeArguments -Quality 75 -InputPath 'C:\image.png' -OutputPath 'C:\image.avif'
-foreach ($token in @('av1_nvenc', '-preset p4', '-f avif', '-pix_fmt yuv420p', '-frames:v 1', '-tune hq', '-rc vbr')) {
+foreach ($token in @('av1_nvenc', '-preset p7', '-f avif', '-pix_fmt yuv420p', '-frames:v 1', '-tune hq', '-rc vbr')) {
     if (-not $args.Contains($token)) { throw "GPU encoder argument missing: $token" }
 }
+if ($args.Contains('-preset p4')) { throw 'Old GPU p4 preset must not be used' }
 foreach ($path in @((Join-Path $repo 'scripts\GPU-Functions.ps1'), (Join-Path $repo 'scripts\Convert-Manga.ps1'))) {
     $tokens = $null
     $errors = $null
