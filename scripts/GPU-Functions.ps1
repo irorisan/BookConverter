@@ -21,7 +21,7 @@ function Get-GpuDistinctQualityCandidate {
     $mid = [int][Math]::Floor(($Low + $High) / 2)
     for ($offset = 0; $offset -le ($High - $Low); $offset++) {
         # On equal distance prefer higher Q, for quality-first selection.
-        foreach ($candidate in @($mid + $offset, $mid - $offset)) {
+        foreach ($candidate in @(($mid + $offset), ($mid - $offset))) {
             if ($candidate -lt $Low -or $candidate -gt $High) { continue }
             $cq = Convert-GpuQualityToCq -Quality $candidate
             if ($UsedCqs -notcontains $cq) { return [int]$candidate }
