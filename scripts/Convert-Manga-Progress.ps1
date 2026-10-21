@@ -1,4 +1,25 @@
 # Display helpers kept separate to allow lightweight tests without starting conversion.
+# PowerShell 7 uses Minimal by default; Classic renders parent and child bars
+# together in ConsoleHost and Windows Terminal without custom cursor control.
+function Initialize-MangaProgress {
+    $PSStyle.Progress.View = 'Classic'
+}
+
+# A single nested progress ID for the current volume's actual encoded pages.
+# Never count exploratory quality probes as completed volume pages.
+function Write-MangaPageProgress {
+    param([int]$Completed, [int]$Total, [string]$Activity='AVIF並列変換',
+          [int]$Workers=0, [switch]$Done)
+    if ($Done) {
+        Write-Progress -Id 2 -ParentId 1 -Activity $Activity -Completed
+        return
+    }
+    $status = '{0} / {1} 枚' -f ([Math]::Min($Total, [Math]::Max(0, $Completed))), $Total
+    if ($Workers -gt 0) { $status += '（並列数 {0}）' -f $Workers }
+    Write-Progress -Id 2 -ParentId 1 -Activity $Activity -Status $status `
+        -PercentComplete (Get-MangaProgressPercent -Completed $Completed -Total $Total)
+}
+
 function Get-MangaProgressPercent {
     param([int]$Completed, [int]$Total)
     if ($Total -le 0) { return 0 }
