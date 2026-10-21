@@ -24,7 +24,7 @@ function Invoke-HybridEncode {
         [ValidateRange(30,95)][int]$GpuQuality,
         [ValidateRange(0,100)][int]$CpuQuality,
         [ValidateRange(0,12)][int]$GpuWorkers=12,
-        [ValidateRange(0,4)][int]$CpuWorkers=4,
+        [ValidateRange(0,8)][int]$CpuWorkers=4,
         [Parameter(Mandatory=$true)][string]$TempDir,
         [string]$CancelFile,
         [ValidateRange(1,86400)][int]$TimeoutSeconds=300,
