@@ -719,7 +719,7 @@ function Invoke-AutoSizeAvif {
         Write-Host "  全ページ変換（$attempt / 最大3回）: 品質$quality / テスト画像再利用 $reusedCount 枚" -ForegroundColor Cyan
         [void](Invoke-ParallelAvif -Entries $trialEntries -Encoder $Encoder -Decoder $Decoder `
             -Quality $quality -Workers $Workers -TempDir $trialDir -OutputName $OutputName `
-            -StageTimes $StageTimes -GpuBatch:$GPU -GpuBatchSize $GpuBatchSize
+            -StageTimes $StageTimes -GpuBatch:$GPU -GpuBatchSize $GpuBatchSize)
         $actualBytes = [long]0
         foreach ($entry in $trialEntries) { $actualBytes += [long]$entry.Length }
         Write-Host ('  AVIF画像の合計容量: {0:N1} MiB（Q{1}）' -f ($actualBytes / 1MB), $quality)
