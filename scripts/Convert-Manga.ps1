@@ -957,6 +957,18 @@ function Invoke-MangaBatch {
             continue
         }
 
+        $stageTimes = [ordered]@{
+            '入力準備' = [TimeSpan]::Zero
+            '展開・EPUB抽出' = [TimeSpan]::Zero
+            '品質探索' = [TimeSpan]::Zero
+            'AVIF本変換' = [TimeSpan]::Zero
+            'AVIFデコード検証' = [TimeSpan]::Zero
+            'CBZ書込・コピー' = [TimeSpan]::Zero
+            'CBZ検証・保存' = [TimeSpan]::Zero
+        }
+        $volumeTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        $prepareTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        $preparationRecorded = $false
         $workDir = Join-Path ([IO.Path]::GetTempPath()) ("MangaCbz_" + [Guid]::NewGuid().ToString('N'))
         $tempCbz = Join-Path $destinationDir ('.manga_' + [Guid]::NewGuid().ToString('N') + '.tmp')
         try {
@@ -972,8 +984,18 @@ function Invoke-MangaBatch {
             # 60MB以下のCBZは中身・ZIP構造を一切変更せず、完成先に原本をコピー。
             if (-not $shouldCompress -and -not $item.IsDirectory -and $item.FullName.ToLowerInvariant().EndsWith('.cbz')) {
                 Write-MangaStage -Name $outputName -Stage "CBZ原本コピー"
-                Copy-Item -LiteralPath $item.FullName -Destination $tempCbz -ErrorAction Stop
-                [IO.File]::Move($tempCbz, $output)
+                $prepareTimer.Stop()
+                $stageTimes['入力準備'] = $prepareTimer.Elapsed
+                $preparationRecorded = $true
+                $copyTimer = [System.Diagnostics.Stopwatch]::StartNew()
+                try {
+                    Copy-Item -LiteralPath $item.FullName -Destination $tempCbz -ErrorAction Stop
+                    [IO.File]::Move($tempCbz, $output)
+                }
+                finally {
+                    $copyTimer.Stop()
+                    $stageTimes['CBZ書込・コピー'] += $copyTimer.Elapsed
+                }
                 Write-Host ('[OK] {0}（変換なし、そのままコピー / {1:N1} MB）' -f $outputName, ($inputBytes / 1MB)) -ForegroundColor Green
                 $success++
                 continue
@@ -984,7 +1006,16 @@ function Invoke-MangaBatch {
             if ($isEpub) {
                 Write-MangaStage -Name $outputName -Stage "EPUB読書順抽出"
                 Write-Host "EPUB読書順を解析: $($item.FullName)"
-                $images = @(Get-EpubPageImages -EpubPath $item.FullName -ExtractionDir (Join-Path $workDir 'epub_pages'))
+                $prepareTimer.Stop()
+                $extractTimer = [System.Diagnostics.Stopwatch]::StartNew()
+                try {
+                    $images = @(Get-EpubPageImages -EpubPath $item.FullName -ExtractionDir (Join-Path $workDir 'epub_pages'))
+                }
+                finally {
+                    $extractTimer.Stop()
+                    $stageTimes['展開・EPUB抽出'] += $extractTimer.Elapsed
+                    $prepareTimer.Start()
+                }
                 Write-Host "  本文ページ順を取得: $($images.Count)枚（001から連番化）" -ForegroundColor Cyan
             }
             else {
@@ -996,9 +1027,18 @@ function Invoke-MangaBatch {
                     Write-MangaStage -Name $outputName -Stage "アーカイブ展開"
                     Write-Host "解凍: $($item.FullName)"
                     # WinRAR x: preserve internal paths, skip overwrites inside this private temp directory.
-                    & $WinRAR x -y -o- -inul $item.FullName ($workDir + '\') | Out-Null
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "WinRARでの展開に失敗しました（終了コード: $LASTEXITCODE）"
+                    $prepareTimer.Stop()
+                    $extractTimer = [System.Diagnostics.Stopwatch]::StartNew()
+                    try {
+                        & $WinRAR x -y -o- -inul $item.FullName ($workDir + '\') | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            throw "WinRARでの展開に失敗しました（終了コード: $LASTEXITCODE）"
+                        }
+                    }
+                    finally {
+                        $extractTimer.Stop()
+                        $stageTimes['展開・EPUB抽出'] += $extractTimer.Elapsed
+                        $prepareTimer.Start()
                     }
                     $sourceDir = $workDir
                 }
@@ -1048,6 +1088,10 @@ function Invoke-MangaBatch {
                 })
             }
 
+            $prepareTimer.Stop()
+            $stageTimes['入力準備'] = $prepareTimer.Elapsed
+            $preparationRecorded = $true
+
             $converted = 0
             $formatLabel = '変換なし'
             $winningQuality = 0
@@ -1064,7 +1108,7 @@ function Invoke-MangaBatch {
                     $auto = Invoke-AutoSizeAvif -Entries $entries -Encoder $encoder -Decoder $decoder `
                         -Workers $workers -ScratchDir (Join-Path $workDir 'autotune') `
                         -OutputName $outputName -MaxTargetBytes $MaxTargetBytes `
-                        -SampleSafetyBytes $SampleSafetyBytes
+                        -SampleSafetyBytes $SampleSafetyBytes -StageTimes $stageTimes
                     $entries = $auto.Entries
                     $converted = $auto.Converted
                     $winningQuality = $auto.Quality
@@ -1082,9 +1126,16 @@ function Invoke-MangaBatch {
             }
 
             Write-MangaStage -Name $outputName -Stage "CBZ書き込み"
-            Write-MangaStoredZip -Path $tempCbz -Entries $entries
+            $writeTimer = [System.Diagnostics.Stopwatch]::StartNew()
+            try { Write-MangaStoredZip -Path $tempCbz -Entries $entries }
+            finally {
+                $writeTimer.Stop()
+                $stageTimes['CBZ書込・コピー'] += $writeTimer.Elapsed
+            }
 
             Write-MangaStage -Name $outputName -Stage "CBZ検証"
+            $finalizeTimer = [System.Diagnostics.Stopwatch]::StartNew()
+            try {
             $check = [IO.Compression.ZipFile]::OpenRead($tempCbz)
             try {
                 if ($check.Entries.Count -ne $entries.Count) {
@@ -1109,15 +1160,30 @@ function Invoke-MangaBatch {
                 $oversized++
             }
             else { $success++ }
+            }
+            finally {
+                $finalizeTimer.Stop()
+                $stageTimes['CBZ検証・保存'] += $finalizeTimer.Elapsed
+            }
         }
         catch {
             Write-Warning "FAIL: $($item.FullName) / $($_.Exception.Message)"
             $failed++
         }
         finally {
-            # Failed cleanup is fatal: never accept another batch with live work.
-            if (Test-Path -LiteralPath $tempCbz) { Remove-Item -LiteralPath $tempCbz -Force -ErrorAction Stop }
-            if (Test-Path -LiteralPath $workDir) { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction Stop }
+            if (-not $preparationRecorded) {
+                $prepareTimer.Stop()
+                $stageTimes['入力準備'] = $prepareTimer.Elapsed
+            }
+            try {
+                # Failed cleanup is fatal: never accept another batch with live work.
+                if (Test-Path -LiteralPath $tempCbz) { Remove-Item -LiteralPath $tempCbz -Force -ErrorAction Stop }
+                if (Test-Path -LiteralPath $workDir) { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction Stop }
+            }
+            finally {
+                $volumeTimer.Stop()
+                Write-MangaTimingReport -Name $outputName -Stages $stageTimes -Total $volumeTimer.Elapsed
+            }
             $completedItems++
             Write-MangaOverallProgress -Completed $completedItems -Total $Items.Count -Name $outputName
         }
