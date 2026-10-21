@@ -15,6 +15,13 @@ Assert-True (-not (($plain -join '') -match '\x1B|[^\x20-\x7E]')) 'redirected/pl
 $small=@(Get-MangaStartupBannerLines -Width 59 -EnableAnsi -ModeLabel 'MAGAZINE / CPU')
 Assert-Equal $small.Count 2 'narrow terminal must use short banner'
 Assert-Equal $small[0] 'BookConverter' 'compact logo'
+foreach($columnCount in @(0,2,10,20,40)){
+    $fallback=@(Get-MangaStartupBannerLines -Width $columnCount -EnableAnsi -ModeLabel 'MAGAZINE / HYBRID')
+    foreach($line in $fallback){
+        Assert-True ($line.Length -le $columnCount) "fallback overflows $columnCount columns"
+        Assert-True (-not ($line -match '\x1B|[^\x20-\x7E]')) 'fallback must contain only printable ASCII'
+    }
+}
 Assert-True (-not (($small -join '') -match '\x1B|[^\x20-\x7E]')) 'narrow banner must remain ASCII'
 
 $styled=@(Get-MangaStartupBannerLines -Width 60 -EnableAnsi -ModeLabel 'MANGA / HYBRID')
