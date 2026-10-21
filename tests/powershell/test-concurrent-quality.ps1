@@ -57,7 +57,51 @@ try {
     }
     if(-not $failed){throw 'CPU job failure was swallowed'}
     if(Test-Path -LiteralPath (Join-Path $cancelDir '.quality-probe-cancel')){throw 'Cancellation marker was not cleaned'}
-    Write-Host 'PASS: independent concurrent quality probes, results, metrics, cancellation and entry safety'
+    # Run the actual size-estimation and binary-search functions with a pure
+    # PowerShell sample encoder, verifying cache isolation and unchanged probes.
+    $parseTokens=$null; $parseErrors=$null
+    $sourceAst=[Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $repo 'scripts/Convert-Manga.ps1'),[ref]$parseTokens,[ref]$parseErrors)
+    if($parseErrors){throw $parseErrors[0]}
+    foreach($name in @('Get-AvifSampleEstimate','Find-AvifQuality')){
+        $node=$sourceAst.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true)
+        if(-not $node){throw "Missing production function: $name"}
+        . ([scriptblock]::Create($node.Extent.Text))
+    }
+    function Invoke-ParallelAvif {
+        param([System.Collections.Generic.List[object]]$Entries,[string]$Encoder,
+            [string]$Decoder,[int]$Quality,[int]$Workers,[string]$TempDir,
+            [string]$OutputName,[switch]$CpuProbe)
+        [IO.Directory]::CreateDirectory($TempDir) | Out-Null
+        $backend=if($CpuProbe){'Cpu'}else{'Gpu'}
+        for($i=0;$i -lt $Entries.Count;$i++){
+            $bytes=[byte[]]::new($(if($CpuProbe){2000+$Quality}else{1000+$Quality}))
+            $path=Join-Path $TempDir ('probe_{0:D2}.avif' -f $i)
+            [IO.File]::WriteAllBytes($path,$bytes)
+            $Entries[$i].SourcePath=$path
+            $Entries[$i].Length=[long]$bytes.Length
+            $Entries[$i] | Add-Member -NotePropertyName EncodedBy -NotePropertyValue $backend -Force
+        }
+        $script:EncodePasses.Add([pscustomobject]@{Phase='Sample';Backend=$backend;GpuPages=$(if($CpuProbe){0}else{12});CpuPages=$(if($CpuProbe){12}else{0})})
+        return $Entries.Count
+    }
+    $realEntries=[System.Collections.Generic.List[object]]::new()
+    foreach($i in 1..40){
+        $realEntries.Add([pscustomobject]@{
+            SourcePath=('original_{0:D2}.png' -f $i)
+            EntryName=('volume_{0:D2}.avif' -f $i)
+            Length=100L
+            NeedsConversion=$true
+            Extension='.png'
+        })
+    }
+    $realSearch=Invoke-HybridQualitySearch -Entries $realEntries -Encoder 'unused.exe' -CpuEncoder 'unused.exe' -GpuWorkers 12 -CpuWorkers 4 -ScratchDir (Join-Path $temp 'real-search') -VolumeName 'real-search' -SampleLimitBytes 68MB -ScriptRoot (Join-Path $repo 'scripts') -EncoderTimeoutSeconds 5
+    if($realSearch.GpuChoice.Quality -ne 93 -or $realSearch.CpuChoice.Quality -ne 93) { throw 'Real binary-search quality decisions changed' }
+    if($realSearch.GpuChoice.Probes.Count -ne 5 -or $realSearch.CpuChoice.Probes.Count -ne 5 -or @($realSearch.Passes).Count -ne 10){throw 'Real quality probe count or metrics changed'}
+    foreach($cached in $realSearch.GpuChoice.Probe.Cache){ if($cached.EncodedBy -ne 'Gpu' -or $cached.Path -notmatch 'sample_q'){throw 'GPU sample cache is corrupt'} }
+    foreach($cached in $realSearch.CpuChoice.Probe.Cache){ if($cached.EncodedBy -ne 'Cpu' -or $cached.Path -notmatch 'cpu_sample_q'){throw 'CPU sample cache is corrupt'} }
+    if(@($realEntries | Where-Object {$_.SourcePath -notmatch '^original_'}).Count -gt 0){throw 'Real search modified input entries'}
+    Write-Host 'PASS: concurrent probes, real quality binary search, cache isolation, metrics, cancellation and entry safety'
 } finally {
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 }
