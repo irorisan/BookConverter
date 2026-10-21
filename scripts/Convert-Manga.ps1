@@ -337,7 +337,8 @@ function Invoke-ParallelAvif {
         [Parameter(Mandatory = $true)][ValidateRange(1, 16)][int]$Workers,
         [Parameter(Mandatory = $true)][string]$TempDir,
         [Parameter(Mandatory = $true)][string]$OutputName,
-        [System.Collections.IDictionary]$StageTimes
+        [System.Collections.IDictionary]$StageTimes,
+        [switch]$GpuBatch
     )
 
     $pending = @($Entries | Where-Object { $_.NeedsConversion })
@@ -347,6 +348,29 @@ function Invoke-ParallelAvif {
         throw 'WebP画像の入力にはdwebp.exeが必要です'
     }
     New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+
+    if ($GPU -and $GpuBatch) {
+        # Keep the sample-search (single image) and CPU paths unchanged until
+        # the dedicated quality-search follow-up PR enables this explicitly.
+        $batchTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            $convertedPaths = @(Invoke-GpuEncodeBatch -Entries $pending -FFmpeg $Encoder -Decoder $Decoder `
+                -Quality $Quality -Workers $Workers -TempDir $TempDir -OutputName $OutputName)
+        }
+        finally {
+            $batchTimer.Stop()
+            if ($null -ne $StageTimes) { $StageTimes['AVIF本変換'] += $batchTimer.Elapsed }
+        }
+        $verifyTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            Invoke-GpuVerifyAvifBatch -Paths $convertedPaths -FFmpeg $Encoder -Workers ([Math]::Min(8, $Workers))
+        }
+        finally {
+            $verifyTimer.Stop()
+            if ($null -ne $StageTimes) { $StageTimes['AVIFデコード検証'] += $verifyTimer.Elapsed }
+        }
+        return $convertedPaths.Count
+    }
 
     $running = [System.Collections.Generic.List[object]]::new()
     $gpuVerifyPaths = [System.Collections.Generic.List[string]]::new()
@@ -690,7 +714,7 @@ function Invoke-AutoSizeAvif {
         Write-Host "  全ページ変換（$attempt / 最大3回）: 品質$quality / テスト画像再利用 $reusedCount 枚" -ForegroundColor Cyan
         [void](Invoke-ParallelAvif -Entries $trialEntries -Encoder $Encoder -Decoder $Decoder `
             -Quality $quality -Workers $Workers -TempDir $trialDir -OutputName $OutputName `
-            -StageTimes $StageTimes)
+            -StageTimes $StageTimes -GpuBatch:$GPU)
         $actualBytes = [long]0
         foreach ($entry in $trialEntries) { $actualBytes += [long]$entry.Length }
         Write-Host ('  AVIF画像の合計容量: {0:N1} MiB（Q{1}）' -f ($actualBytes / 1MB), $quality)
