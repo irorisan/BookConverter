@@ -31,10 +31,9 @@ function Format-MangaProgressStatus {
     $milliseconds=[long][Math]::Floor([Math]::Max([double]0,$ElapsedSeconds)*1000)
     $elapsed=Format-MangaElapsed -Duration ([TimeSpan]::FromMilliseconds($milliseconds))
     $status+=' | 速度 '+$speed+' | 経過 '+$elapsed
-    if($Width -ge 155){
-        if($Detail){$status+=" | $Detail"}
-        if($Workers -gt 0){$status+=" | 並列数 $Workers"}
-    }
+    # GPU/CPU probe breakdown is more useful than worker counts.
+    if($Width -ge 96 -and $Detail){$status+=" | $Detail"}
+    if($Width -ge 155 -and $Workers -gt 0){$status+=" | 並列数 $Workers"}
     return $status
 }
 
