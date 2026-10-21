@@ -60,7 +60,7 @@ try {
     $entries=[System.Collections.Generic.List[object]]::new()
     $entries.Add([pscustomobject]@{SourcePath='source.png';NeedsConversion=$true;Length=123L})
     $before=[Diagnostics.Stopwatch]::StartNew()
-    $result=Invoke-HybridQualitySearch -Entries $entries -Encoder 'unused.exe' -CpuEncoder 'unused.exe' -GpuWorkers 12 -CpuWorkers 4 -ScratchDir $temp -VolumeName 'test' -SampleLimitBytes 68MB -ScriptRoot (Join-Path $repo 'scripts') -EncoderTimeoutSeconds 5
+    $result=Invoke-HybridQualitySearch -Entries $entries -Encoder 'unused.exe' -CpuEncoder 'unused.exe' -GpuWorkers 12 -CpuProbeWorkers 4 -ScratchDir $temp -VolumeName 'test' -SampleLimitBytes 68MB -ScriptRoot (Join-Path $repo 'scripts') -EncoderTimeoutSeconds 5
     $before.Stop()
     if($result.GpuChoice.Quality -ne 83 -or $result.CpuChoice.Quality -ne 71) {throw 'Wrong independent qualities'}
     if(@($result.Passes).Count -ne 2 -or @($result.Passes | Where-Object {$_.Backend -eq 'Gpu'}).Count -ne 1 -or @($result.Passes | Where-Object {$_.Backend -eq 'Cpu'}).Count -ne 1){throw 'Probe metrics were lost'}
@@ -86,7 +86,7 @@ try {
     $failed=$false
     $cancelDir=Join-Path $temp 'cancel'
     try {
-        Invoke-HybridQualitySearch -Entries $entries -Encoder 'unused.exe' -CpuEncoder 'unused.exe' -GpuWorkers 12 -CpuWorkers 4 -ScratchDir $cancelDir -VolumeName 'cancel-test' -SampleLimitBytes 68MB -ScriptRoot (Join-Path $repo 'scripts') -EncoderTimeoutSeconds 5 | Out-Null
+        Invoke-HybridQualitySearch -Entries $entries -Encoder 'unused.exe' -CpuEncoder 'unused.exe' -GpuWorkers 12 -CpuProbeWorkers 4 -ScratchDir $cancelDir -VolumeName 'cancel-test' -SampleLimitBytes 68MB -ScriptRoot (Join-Path $repo 'scripts') -EncoderTimeoutSeconds 5 | Out-Null
     } catch {
         if($_.Exception.Message -notmatch 'CPU|Deliberate|failed'){throw}
         $failed=$true
@@ -131,7 +131,7 @@ try {
             Extension='.png'
         })
     }
-    $realSearch=Invoke-HybridQualitySearch -Entries $realEntries -Encoder 'unused.exe' -CpuEncoder 'unused.exe' -GpuWorkers 12 -CpuWorkers 4 -ScratchDir (Join-Path $temp 'real-search') -VolumeName 'real-search' -SampleLimitBytes 68MB -ScriptRoot (Join-Path $repo 'scripts') -EncoderTimeoutSeconds 5
+    $realSearch=Invoke-HybridQualitySearch -Entries $realEntries -Encoder 'unused.exe' -CpuEncoder 'unused.exe' -GpuWorkers 12 -CpuProbeWorkers 4 -ScratchDir (Join-Path $temp 'real-search') -VolumeName 'real-search' -SampleLimitBytes 68MB -ScriptRoot (Join-Path $repo 'scripts') -EncoderTimeoutSeconds 5
     if($realSearch.GpuChoice.Quality -ne 93 -or $realSearch.CpuChoice.Quality -ne 93) { throw 'Real binary-search quality decisions changed' }
     if($realSearch.GpuChoice.Probes.Count -ne 5 -or $realSearch.CpuChoice.Probes.Count -ne 5 -or @($realSearch.Passes).Count -ne 10){throw 'Real quality probe count or metrics changed'}
     foreach($cached in $realSearch.GpuChoice.Probe.Cache){ if($cached.EncodedBy -ne 'Gpu' -or $cached.Path -notmatch 'sample_q'){throw 'GPU sample cache is corrupt'} }
