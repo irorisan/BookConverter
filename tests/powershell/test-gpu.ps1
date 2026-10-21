@@ -21,8 +21,8 @@ foreach ($oldName in @('Get-GpuBenchmarkPreset', 'Get-GpuBatchProcessLimit', 'Ge
         throw "Unused GPU benchmark function remains: $oldName"
     }
 }
-if (-not (Get-Command Invoke-GpuEncodePages -CommandType Function -ErrorAction SilentlyContinue)) {
-    throw 'Expected fixed one-image-per-FFmpeg encoder'
+if (Get-Command Invoke-GpuEncodeBatch -CommandType Function -ErrorAction SilentlyContinue) {
+    throw 'The obsolete multi-output GPU encoder still exists'
 }
 foreach ($path in @((Join-Path $repo 'scripts\GPU-Functions.ps1'), (Join-Path $repo 'scripts\Convert-Manga.ps1'))) {
     $tokens = $null
@@ -167,6 +167,26 @@ public static class MockEncode {
     Add-Type -TypeDefinition $code -OutputAssembly $fakeEncoder -OutputType ConsoleApplication -ErrorAction Stop
     $env:BOOKCONV_ENCODE_LOGDIR = $logDir
 
+    # Extract the one shared page-encoder function without invoking the
+    # interactive main script. This exercises the real PowerShell scheduler.
+    $mainPath = Join-Path $repo 'scripts\Convert-Manga.ps1'
+    $parseTokens = $null
+    $parseErrors = $null
+    $mainAst = [System.Management.Automation.Language.Parser]::ParseFile($mainPath, [ref]$parseTokens, [ref]$parseErrors)
+    if ($parseErrors.Count -gt 0) { throw "Malformed Convert-Manga.ps1: $($parseErrors[0])" }
+    $matches = @($mainAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-ParallelAvif'
+    }, $true))
+    if ($matches.Count -ne 1) { throw 'Missing unique real GPU/CPU page conversion function' }
+    . ([scriptblock]::Create($matches[0].Extent.Text))
+    $script:GPU = $true
+    $script:verifiedPages = 0
+    function Invoke-GpuVerifyAvifBatch {
+        param([string[]]$Paths, [string]$FFmpeg, [int]$Workers)
+        $script:verifiedPages += $Paths.Count
+    }
+
     # The GPU helper mutates entries in the same shape used by full-volume conversion.
     function Test-AvifOutput {
         param([string]$Path)
@@ -188,8 +208,9 @@ public static class MockEncode {
         })
     }
     $outputDir = Join-Path $encodeTemp 'output'
-    $convertedPaths = @(Invoke-GpuEncodePages -Entries $images.ToArray() -FFmpeg $fakeEncoder -Quality 75 -TempDir $outputDir -OutputName 'test')
-    if ($convertedPaths.Count -ne 9) { throw "Expected 9 encoded pages, got $($convertedPaths.Count)" }
+    $converted = Invoke-ParallelAvif -Entries $images -Encoder $fakeEncoder -Quality 75 -Workers 12 -TempDir $outputDir -OutputName 'test'
+    if ($converted -ne 9) { throw "Expected 9 encoded pages, got $converted" }
+    if ($script:verifiedPages -ne 9) { throw 'All 9 generated AVIFs must be decoded' }
     foreach ($entry in $images) { Test-AvifOutput -Path $entry.SourcePath }
     $logs = @(Get-ChildItem -LiteralPath $logDir -Filter '*.txt')
     if ($logs.Count -ne 9) { throw "Expected 9 FFmpeg encoding launches for 9 pages, got $($logs.Count)" }
@@ -214,8 +235,9 @@ public static class MockEncode {
     }
     Get-ChildItem -LiteralPath $logDir -Filter '*.txt' | Remove-Item -Force
     $fixedOutput = Join-Path $encodeTemp 'fixed_12'
-    $converted = @(Invoke-GpuEncodePages -Entries $twelve.ToArray() -FFmpeg $fakeEncoder -Quality 75 -TempDir $fixedOutput -OutputName 'fixed')
-    if ($converted.Count -ne 12) { throw "Fixed GPU encoder produced $($converted.Count)/12 pages" }
+    $converted = Invoke-ParallelAvif -Entries $twelve -Encoder $fakeEncoder -Quality 75 -Workers 12 -TempDir $fixedOutput -OutputName 'fixed'
+    if ($converted -ne 12) { throw "Fixed GPU encoder produced $converted/12 pages" }
+    if ($script:verifiedPages -ne 21) { throw 'All 12 generated AVIFs must be decoded' }
     $fixedLogs = @(Get-ChildItem -LiteralPath $logDir -Filter '*.txt')
     if ($fixedLogs.Count -ne 12) { throw "Expected 12 independent FFmpeg launches, got $($fixedLogs.Count)" }
     foreach ($log in $fixedLogs) {
@@ -232,13 +254,13 @@ public static class MockEncode {
         throw 'Temporary GPU benchmark selection still exists'
     }
     if (-not $sourceText.Contains('$workers = 12') -or
-        -not $sourceText.Contains('Invoke-GpuEncodePages')) {
+        -not $sourceText.Contains('Invoke-ParallelAvif')) {
         throw 'GPU encoder must use fixed twelve-process single-image path'
     }
     $sampleStart = $sourceText.IndexOf('function Get-AvifSampleEstimate')
     $sampleEnd = $sourceText.IndexOf('function Find-AvifQuality')
     if ($sampleStart -lt 0 -or $sampleEnd -le $sampleStart -or
-        -not $sourceText.Substring($sampleStart,$sampleEnd-$sampleStart).Contains('-GpuBatch:$GPU')) {
+        -not $sourceText.Substring($sampleStart,$sampleEnd-$sampleStart).Contains('Invoke-ParallelAvif')) {
         throw 'GPU quality samples must use the same fixed GPU encoder'
     }
     Write-Host 'GPU fixed 12 processes / 1 image: mock FFmpeg validated for 9 and 12 pages'
@@ -253,7 +275,7 @@ public static class MockEncode {
         Length = 3L
     })
     try {
-        [void](Invoke-GpuEncodePages -Entries $failEntries.ToArray() -FFmpeg $fakeEncoder -Quality 75 -TempDir (Join-Path $encodeTemp 'failed') -OutputName 'failed')
+        [void](Invoke-ParallelAvif -Entries $failEntries -Encoder $fakeEncoder -Quality 75 -Workers 12 -TempDir (Join-Path $encodeTemp 'failed') -OutputName 'failed')
     } catch { $failed = $true }
     if (-not $failed) { throw 'Nonzero FFmpeg exit must fail the volume, never silently fall back to CPU' }
 }
