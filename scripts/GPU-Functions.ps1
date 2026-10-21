@@ -122,8 +122,32 @@ function Invoke-GpuVerifyAvifBatch {
                     if ($hasAvifdec) {
                         $testPng = [IO.Path]::ChangeExtension($path, '.validated.png')
                         try {
-                            & $avifdec $path $testPng | Out-Null
-                            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $testPng -PathType Leaf)) {
+                            $decodeCode=0
+                            if ($TimeoutSeconds -gt 0) {
+                                $decodeProcess=New-Object Diagnostics.Process
+                                $decodeClock=[Diagnostics.Stopwatch]::StartNew()
+                                try {
+                                    $decodeProcess.StartInfo.FileName=$avifdec
+                                    $decodeProcess.StartInfo.Arguments='"{0}" "{1}"' -f $path,$testPng
+                                    $decodeProcess.StartInfo.UseShellExecute=$false
+                                    $decodeProcess.StartInfo.CreateNoWindow=$true
+                                    if (-not $decodeProcess.Start()) { throw 'avifdec start failed' }
+                                    while (-not $decodeProcess.WaitForExit(20)) {
+                                        if ($CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'avifdec cancelled' }
+                                        if ($decodeClock.Elapsed.TotalSeconds -gt $TimeoutSeconds) { throw 'avifdec timed out' }
+                                    }
+                                    $decodeCode=$decodeProcess.ExitCode
+                                } finally {
+                                    try { if (-not $decodeProcess.HasExited) { $decodeProcess.Kill(); $decodeProcess.WaitForExit() } }
+                                    catch { }
+                                    $decodeProcess.Dispose()
+                                    $decodeClock.Stop()
+                                }
+                            } else {
+                                & $avifdec $path $testPng | Out-Null
+                                $decodeCode=$LASTEXITCODE
+                            }
+                            if ($decodeCode -ne 0 -or -not (Test-Path -LiteralPath $testPng -PathType Leaf)) {
                                 throw "libavifによるデコード検証に失敗しました: $path"
                             }
                         }

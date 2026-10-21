@@ -39,7 +39,7 @@ function Invoke-HybridEncode {
     $running = [System.Collections.Generic.List[object]]::new()
     $stats = [ordered]@{ GpuPages=0; CpuPages=0; GpuAttempts=0; CpuAttempts=0;
         GpuSeconds=0.0; CpuSeconds=0.0; Errors=0; Retries=0;
-        PeakGpu=0; PeakCpu=0; PeakTotal=0; GpuQuality=$GpuQuality; CpuQuality=$CpuQuality }
+        PeakGpu=0; PeakCpu=0; PeakTotal=0; GpuQuality=$GpuQuality; GpuCq=(Convert-GpuQualityToCq $GpuQuality); CpuQuality=$CpuQuality }
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $success = $false
     $cpuLimit = $CpuWorkers

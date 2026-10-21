@@ -1282,6 +1282,7 @@ function Invoke-MangaBatch {
                         Output=$output; TotalSeconds=$volumeTimer.Elapsed.TotalSeconds; FinalBytes=$finalBytes;
                         GpuWorkers=$GpuWorkers; CpuWorkers=$(if ($ConversionMode -eq 'Hybrid') {$CpuWorkers} else {0});
                         GpuQuality=$winningQuality; CpuQuality=$script:HybridCpuQuality;
+                        SizeRetries=[Math]::Max(0,@($script:EncodePasses | Where-Object { $_.Phase -eq 'Full' }).Count-1);
                         Stages=$stageSeconds; Passes=@($script:EncodePasses.ToArray()) }
                     $metricsDir=if ($ReportDirectory) { $ReportDirectory } else { Join-Path $destinationDir 'metrics' }
                     if ($metricsDir) {
