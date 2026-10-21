@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-. (Join-Path $repo 'GPU-Functions.ps1')
+. (Join-Path $repo 'scripts\GPU-Functions.ps1')
 
 if ((Convert-GpuQualityToCq -Quality 30) -ne 50) { throw 'GPU quality low endpoint changed' }
 if ((Convert-GpuQualityToCq -Quality 95) -ne 15) { throw 'GPU quality high endpoint changed' }
@@ -14,7 +14,7 @@ $args = Get-GpuEncodeArguments -Quality 75 -InputPath 'C:\image.png' -OutputPath
 foreach ($token in @('av1_nvenc', '-preset p4', '-f avif', '-pix_fmt yuv420p', '-frames:v 1', '-tune hq', '-rc vbr')) {
     if (-not $args.Contains($token)) { throw "GPU encoder argument missing: $token" }
 }
-foreach ($path in @((Join-Path $repo 'GPU-Functions.ps1'), (Join-Path $repo 'Convert-Manga.ps1'))) {
+foreach ($path in @((Join-Path $repo 'scripts\GPU-Functions.ps1'), (Join-Path $repo 'scripts\Convert-Manga.ps1'))) {
     $tokens = $null
     $errors = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)

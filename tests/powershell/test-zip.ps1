@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-. (Join-Path $root 'Convert-Manga-Zip.ps1')
+. (Join-Path $root 'scripts\Convert-Manga-Zip.ps1')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $work = Join-Path ([IO.Path]::GetTempPath()) ('BookConverterZip_' + [Guid]::NewGuid().ToString('N'))
 try {

@@ -53,6 +53,10 @@ jobs:
         shell: pwsh
         run: python tests/powershell/smoke_gpu_passthrough.py
 
+      - name: Smoke test personal updater with offline main archive
+        shell: pwsh
+        run: python tests/powershell/smoke_updater.py
+
       - name: Smoke test unchanged small CBZ copy
         shell: pwsh
         run: python tests/powershell/smoke_cbz.py

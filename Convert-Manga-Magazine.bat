@@ -2,13 +2,13 @@
 setlocal DisableDelayedExpansion
 chcp 65001 >nul
 
-if not exist "%~dp0Convert-Manga.ps1" (
-    echo ERROR: Convert-Manga.ps1 was not found beside this BAT file.
+if not exist "%~dp0scripts\Convert-Manga.ps1" (
+    echo ERROR: scripts\Convert-Manga.ps1 was not found.
     pause
     exit /b 1
 )
 
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0Convert-Manga.ps1" -Magazine %*
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Convert-Manga.ps1" -Magazine %*
 set "result=%ERRORLEVEL%"
 
 if not "%result%"=="0" (

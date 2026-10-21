@@ -30,7 +30,7 @@ def main() -> None:
         # Two empty responses: accepted series name, and automatic workers.
         result = subprocess.run(
             ["powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
-             "-File", str(ROOT / "Convert-Manga.ps1"), str(source)],
+             "-File", str(ROOT / "scripts" / "Convert-Manga.ps1"), str(source)],
             input="\n\nq\n", capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=120, check=False,
         )
