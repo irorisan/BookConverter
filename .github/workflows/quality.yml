@@ -49,6 +49,10 @@ jobs:
           }
           ./tests/powershell/test-runtime.ps1
 
+      - name: Validate GPU-led CPU calibration and selective no-duplicate retries
+        shell: pwsh
+        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-gpu-led.ps1
+
       - name: Validate planning documents
         shell: python
         run: |
@@ -113,10 +117,6 @@ jobs:
       - name: Smoke test distinct manga and magazine BAT modes
         shell: pwsh
         run: python tests/powershell/smoke_modes.py
-
-      - name: Validate GPU-led CPU calibration and selective no-duplicate retries
-        shell: pwsh
-        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-gpu-led.ps1
 
       - name: Validate concurrent GPU and CPU quality probes on PowerShell 7.6
         shell: pwsh
