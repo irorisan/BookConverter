@@ -5,20 +5,69 @@ function Initialize-MangaProgress {
     $PSStyle.Progress.View = 'Classic'
 }
 
-# A single nested progress ID for the current volume's actual encoded pages.
-# Never count exploratory quality probes as completed volume pages.
+# A concise pure formatter makes progress truthful and easy to test without
+# a real terminal. Probing measures iterations/s; encoding measures pages/s.
+function Format-MangaProgressStatus {
+    param(
+        [string]$Activity,
+        [int]$Completed,
+        [int]$Total,
+        [string]$Unit='枚',
+        [double]$ElapsedSeconds=0,
+        [int]$Width=120,
+        [int]$Workers=0,
+        [string]$Detail=''
+    )
+    $done=[Math]::Min([Math]::Max(0,$Completed),[Math]::Max(0,$Total))
+    $percentage=Get-MangaProgressPercent -Completed $Completed -Total $Total
+    $count='{0} / {1} {2} | {3}%' -f $done,$Total,$Unit,$percentage
+    if($Width -lt 60){return $count}
+    $status="$Activity | $count"
+    if($Width -lt 96){return $status}
+    $speed='-'
+    if($ElapsedSeconds -gt 0 -and $done -gt 0){
+        $speed=('{0:F2} {1}/s' -f ($done/$ElapsedSeconds),$Unit)
+    }
+    $elapsed=Format-MangaElapsed -Duration ([TimeSpan]::FromSeconds([Math]::Max(0,$ElapsedSeconds)))
+    $status+=' | 速度 '+$speed+' | 経過 '+$elapsed
+    if($Width -ge 155){
+        if($Detail){$status+=" | $Detail"}
+        if($Workers -gt 0){$status+=" | 並列数 $Workers"}
+    }
+    return $status
+}
+
+# Width-sensitive fallback: no custom cursor movement, colors or animations.
+function Get-MangaProgressWidth {
+    try {
+        $columns=[Console]::WindowWidth
+        if($columns -gt 0){return [int]$columns}
+    } catch {
+        # Redirected and test hosts may have no console width.
+    }
+    return 120
+}
+
+# ID 2 is the active task. Its own clock resets at task transitions and closes
+# after cancellation, failure or success. GPU and CPU worker threads never draw.
 function Write-MangaPageProgress {
     param([int]$Completed, [int]$Total, [string]$Activity='AVIF並列変換',
           [int]$Workers=0, [string]$Unit='枚', [string]$Detail='', [switch]$Done)
-    $heading = 'BookConverter / 現在のタスク進捗'
-    if ($Done) {
+    $heading='BookConverter / 現在のタスク進捗'
+    if($Done){
+        $script:MangaCurrentTaskClock=$null
+        $script:MangaCurrentTaskName=$null
         Write-Progress -Id 2 -ParentId 1 -Activity $heading -Completed
         return
     }
-    $status = '{0} | {1} / {2} {3}' -f $Activity,
-        ([Math]::Min($Total, [Math]::Max(0, $Completed))), $Total, $Unit
-    if ($Detail) { $status += " | $Detail" }
-    if ($Workers -gt 0) { $status += '（並列数 {0}）' -f $Workers }
+    if($null -eq $script:MangaCurrentTaskClock -or
+        $script:MangaCurrentTaskName -ne $Activity){
+        $script:MangaCurrentTaskClock=[Diagnostics.Stopwatch]::StartNew()
+        $script:MangaCurrentTaskName=$Activity
+    }
+    $status=Format-MangaProgressStatus -Activity $Activity -Completed $Completed -Total $Total `
+        -Unit $Unit -ElapsedSeconds $script:MangaCurrentTaskClock.Elapsed.TotalSeconds `
+        -Width (Get-MangaProgressWidth) -Workers $Workers -Detail $Detail
     Write-Progress -Id 2 -ParentId 1 -Activity $heading -Status $status `
         -PercentComplete (Get-MangaProgressPercent -Completed $Completed -Total $Total)
 }
@@ -39,12 +88,23 @@ function Format-MangaElapsed {
 
 function Write-MangaOverallProgress {
     param([int]$Completed, [int]$Total, [string]$Name = '', [switch]$Done)
-    if ($Done) {
-        Write-Progress -Id 1 -Activity 'BookConverter / 全体のタスク進捗' -Completed
+    $heading='BookConverter / 全体のタスク進捗'
+    if($Done){
+        $script:MangaBatchClock=$null
+        Write-Progress -Id 1 -Activity $heading -Completed
         return
     }
-    $status = '{0} / {1} 件処理済み | {2}' -f $Completed, $Total, $Name
-    Write-Progress -Id 1 -Activity 'BookConverter / 全体のタスク進捗' -Status $status `
+    if($null -eq $script:MangaBatchClock){
+        $script:MangaBatchClock=[Diagnostics.Stopwatch]::StartNew()
+    }
+    $done=[Math]::Min([Math]::Max(0,$Completed),[Math]::Max(0,$Total))
+    $status='{0} / {1} 件 | {2}% | 経過 {3}' -f $done,$Total,
+        (Get-MangaProgressPercent -Completed $Completed -Total $Total),
+        (Format-MangaElapsed -Duration $script:MangaBatchClock.Elapsed)
+    $width=Get-MangaProgressWidth
+    if($width -lt 55){$status='{0} / {1} 件 | {2}%' -f $done,$Total,(Get-MangaProgressPercent -Completed $Completed -Total $Total)}
+    elseif($width -ge 135 -and $Name){$status+=" | $Name"}
+    Write-Progress -Id 1 -Activity $heading -Status $status `
         -PercentComplete (Get-MangaProgressPercent -Completed $Completed -Total $Total)
 }
 
