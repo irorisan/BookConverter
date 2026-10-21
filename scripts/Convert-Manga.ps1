@@ -343,6 +343,7 @@ function Test-AvifOutput {
 
 . (Join-Path $PSScriptRoot 'GPU-Functions.ps1')
 . (Join-Path $PSScriptRoot 'Hybrid-Functions.ps1')
+. (Join-Path $PSScriptRoot 'Hybrid-QualityParallel.ps1')
 
 function Invoke-ParallelAvif {
     param(
@@ -701,15 +702,20 @@ function Invoke-AutoSizeAvif {
     Write-MangaStage -Name $OutputName -Stage "品質探索"
     $qualityTimer = [System.Diagnostics.Stopwatch]::StartNew()
     try {
-        $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
-            -Workers $Workers -ScratchDir $ScratchDir -VolumeName $OutputName `
-            -SampleLimitBytes $sampleLimit
         if ($ConversionMode -eq 'Hybrid') {
-            $cpuChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
-                -Workers $CpuWorkers -ScratchDir $ScratchDir -VolumeName "$OutputName / CPU" `
-                -SampleLimitBytes $sampleLimit -CpuProbe
-            $script:HybridCpuQuality = $cpuChoice.Quality
-            Write-Host "  Independent qualities: GPU CQ$(Convert-GpuQualityToCq $qualityChoice.Quality), CPU q$($cpuChoice.Quality)"
+            $parallel = Invoke-HybridQualitySearch -Entries $Entries -Encoder $Encoder -CpuEncoder $script:CpuEncoder `
+                -Decoder $Decoder -GpuWorkers $GpuWorkers -CpuWorkers $CpuWorkers `
+                -ScratchDir $ScratchDir -VolumeName $OutputName -SampleLimitBytes $sampleLimit `
+                -ScriptRoot $PSScriptRoot -CancelFile $CancelFile -EncoderTimeoutSeconds $EncoderTimeoutSeconds
+            $qualityChoice = $parallel.GpuChoice
+            $script:HybridCpuQuality = $parallel.CpuChoice.Quality
+            foreach ($pass in $parallel.Passes) { $script:EncodePasses.Add($pass) }
+            Write-Host "  Concurrent qualities: GPU CQ$(Convert-GpuQualityToCq $qualityChoice.Quality), CPU q$($script:HybridCpuQuality)"
+        }
+        else {
+            $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
+                -Workers $Workers -ScratchDir $ScratchDir -VolumeName $OutputName `
+                -SampleLimitBytes $sampleLimit
         }
     }
     finally {
