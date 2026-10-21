@@ -13,16 +13,6 @@ $unpacked = Join-Path $work 'unpacked'
 $backupRoot = Join-Path $work 'backup'
 $processed = New-Object 'System.Collections.Generic.List[string]'
 $hadFile = @{}
-$legacyPaths = @(
-    'Install-Latest-GitHub-GPU-Test.bat',
-    'Install-Latest-GitHub-GPU-Test.ps1',
-    'Convert-Manga.ps1',
-    'Convert-Manga-Epub.ps1',
-    'Convert-Manga-Input.ps1',
-    'Convert-Manga-Progress.ps1',
-    'Convert-Manga-Zip.ps1',
-    'GPU-Functions.ps1'
-)
 try {
     Write-Host 'BookConverter: downloading latest GitHub main...' -ForegroundColor Cyan
     New-Item -Path $work -ItemType Directory -Force | Out-Null
@@ -61,7 +51,7 @@ try {
         })
     if ($files.Count -eq 0) { throw 'GitHub main archive contained no update files.' }
 
-    # Stage a backup of every file before overwriting or removing it.
+    # Back up any overwritten files before applying the main archive.
     foreach ($file in $files) {
         $relative = $file.FullName.Substring($source.Length).TrimStart('\','/')
         $destination = Join-Path $root $relative
@@ -75,21 +65,6 @@ try {
         $processed.Add($relative)
         New-Item -Path (Split-Path -Parent $destination) -ItemType Directory -Force | Out-Null
         Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
-    }
-
-    # The old standalone test installer was never part of the main repository.
-    # Remove it only from this local BookConverter directory, not from elsewhere.
-    foreach ($relative in $legacyPaths) {
-        $destination = Join-Path $root $relative
-        if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) { continue }
-        if (-not $hadFile.ContainsKey($relative)) {
-            $backup = Join-Path $backupRoot $relative
-            New-Item -Path (Split-Path -Parent $backup) -ItemType Directory -Force | Out-Null
-            Copy-Item -LiteralPath $destination -Destination $backup -Force
-            $hadFile[$relative] = $true
-            $processed.Add($relative)
-        }
-        Remove-Item -LiteralPath $destination -Force
     }
 
     Write-Host ('Updated from GitHub main: {0} files.' -f $files.Count) -ForegroundColor Green
