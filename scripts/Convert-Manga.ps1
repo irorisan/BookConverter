@@ -32,6 +32,7 @@ $ArchiveExtensions = @('.zip', '.cbz', '.rar', '.epub')
 $OutputFolderName = 'avif変換cbz'
 . (Join-Path $PSScriptRoot 'Convert-Manga-Epub.ps1')
 . (Join-Path $PSScriptRoot 'Convert-Manga-Progress.ps1')
+Initialize-MangaProgress
 . (Join-Path $PSScriptRoot 'Convert-Manga-Input.ps1')
 . (Join-Path $PSScriptRoot 'Convert-Manga-Zip.ps1')
 # PowerShell 1MB means 1MiB (1,048,576 bytes).
@@ -373,7 +374,7 @@ function Invoke-ParallelAvif {
         try {
             $pass = Invoke-HybridEncode -Entries $pending -FFmpeg $Encoder -Avifenc $script:CpuEncoder `
                 -Decoder $Decoder -GpuQuality $Quality -CpuQuality $cpuQ -GpuWorkers $g -CpuWorkers $c `
-                -TempDir $TempDir -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
+                -TempDir $TempDir -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds -TrackProgress:$FullPass
             $pass | Add-Member -NotePropertyName Phase -NotePropertyValue $(if ($FullPass) {'Full'} else {'Sample'})
             $script:EncodePasses.Add($pass)
         } catch {
@@ -399,7 +400,7 @@ function Invoke-ParallelAvif {
     $next = 0
     $finished = 0
     $activity = "AVIF並列変換: $OutputName"
-    Write-Progress -Id 2 -ParentId 1 -Activity $activity -Status "0 / $($pending.Count)枚（並列数 $Workers）" -PercentComplete 0
+    Write-MangaPageProgress -Completed 0 -Total $pending.Count -Activity $activity -Workers $Workers
 
     $encodeTimer = [System.Diagnostics.Stopwatch]::StartNew()
     try {
@@ -487,7 +488,7 @@ function Invoke-ParallelAvif {
                     Remove-Item -LiteralPath $job.Intermediate -Force
                 }
                 $finished++
-                Write-Progress -Id 2 -ParentId 1 -Activity $activity -Status "$finished / $($pending.Count)枚（並列数 $Workers）" -PercentComplete ([int](100 * $finished / $pending.Count))
+                Write-MangaPageProgress -Completed $finished -Total $pending.Count -Activity $activity -Workers $Workers
             }
             if (-not $gotResult) { Start-Sleep -Milliseconds $(if ($GPU) { 20 } else { 120 }) }
         }
@@ -503,7 +504,7 @@ function Invoke-ParallelAvif {
             catch { }
             finally { $job.Process.Dispose() }
         }
-        Write-Progress -Id 2 -ParentId 1 -Activity $activity -Completed
+        Write-MangaPageProgress -Activity $activity -Done
         $encodeTimer.Stop()
         if ($null -ne $StageTimes) { $StageTimes['AVIF本変換'] += $encodeTimer.Elapsed }
     }
@@ -1341,7 +1342,7 @@ catch {
     exit 1
 }
 finally {
-    Write-Progress -Id 2 -ParentId 1 -Activity 'BookConverter' -Completed
+    Write-MangaPageProgress -Activity 'BookConverter' -Done
     Write-MangaOverallProgress -Completed 0 -Total 0 -Done
 }
 if ($script:ExperimentFailed) { exit 1 }
