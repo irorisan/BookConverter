@@ -9,6 +9,27 @@ Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-M
 - GitHubには第三者の `avifenc.exe` バイナリを含めていません。必要な場合は従来の自動取得、または `tools\avifenc.exe` への配置を利用してください。
 - 開発計画は [DOCS/DEVELOPMENT_PLAN.md](DOCS/DEVELOPMENT_PLAN.md) を参照してください。
 
+## NVIDIA GPU（NVENC）でのAVIF変換
+
+**正式なGPUモードを追加しました。** RTX 40/50などのAV1 NVENC対応GPUが必要です。
+既存のCPUモードはそのまま利用でき、画像と出力CBZの保存ルールも共通です。
+
+| 起動BAT | 変換エンジン | モード |
+|---|---|---|
+| `Convert-Manga-GPU.bat` | `ffmpeg.exe / av1_nvenc` | 漫画・GPU |
+| `Convert-Manga-Magazine-GPU.bat` | `ffmpeg.exe / av1_nvenc` | 雑誌・GPU |
+| `Convert-Manga.bat` | `avifenc.exe / CPU` | 漫画・CPU |
+| `Convert-Manga-Magazine.bat` | `avifenc.exe / CPU` | 雑誌・CPU |
+
+- `ffmpeg.exe` は**同梱しません**。NVENCエンコーダー・AVIF muxer付きのWindowsビルドを用意し、`tools\ffmpeg.exe` に置くかPATHへ追加します。
+- GPU版は**8枚同時変換が初期値**。起動時に1～16を入力できますが、GPU変換数は12までに制限します。`-preset p4`、`-pix_fmt yuv420p` を使用します。
+- 元ファイルが60MiB以下なら再圧縮しません。60MiB超では従来の最大12ページ×最大5回の試算で容量を調整し、70MiB以内を目指します。70MiB超過時は従来どおり警告付きで保存する場合があります。
+- GPUで生成されたAVIFはヘッダーと**全ページのFFmpegデコード**で検証します。`tools\avifdec.exe` があればlibavifでの追加検証も行います。
+- NVENC実行エラー時は**黙ってCPU版へ切り替えません**。元データを保持したまま当該巻を失敗扱いとします。CPUを使う場合は従来のBATで実行してください。
+- CPUの画質設定QとGPUのCQは同一画質を示すものではありません。GPUモードの品質探索は独立した尺度として扱います。
+- 出力先は両方式とも `avif変換cbz`。既存の同名作品があれば安全のためスキップするので、比較時は生成済みのCBZを別の場所に移してから再変換してください。
+- KavitaやMihonでの表紙・本文表示は最初の数巻で確認することを推奨します。Windows/NVIDIA GPU実機テストはCIでは実行していません。
+
 ## 漫画と雑誌のBATを使い分ける
 
 | 起動ファイル | 入れるもの | 作品名の扱い |
