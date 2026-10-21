@@ -210,6 +210,68 @@ public static class MockEncode {
     } | Sort-Object)
     if (($counts -join ',') -ne '1,4,4') { throw "Unexpected batch sizes: $($counts -join ',')" }
 
+
+    # Temporary presets control both simultaneous FFmpeg processes and
+    # independently encoded AVIF images per process.
+    $presets = @(
+        [pscustomobject]@{ Choice='1'; Processes=12; Images=1; Launches=12 }
+        [pscustomobject]@{ Choice='2'; Processes=6; Images=2; Launches=6 }
+        [pscustomobject]@{ Choice='3'; Processes=4; Images=3; Launches=4 }
+        [pscustomobject]@{ Choice='4'; Processes=3; Images=4; Launches=3 }
+    )
+    if ($null -ne (Get-GpuBenchmarkPreset -Choice '0') -or
+        $null -ne (Get-GpuBenchmarkPreset -Choice '5')) {
+        throw 'Unknown GPU benchmark choice must be rejected'
+    }
+    foreach ($preset in $presets) {
+        $actualPreset = Get-GpuBenchmarkPreset -Choice $preset.Choice
+        if ($actualPreset.ProcessCount -ne $preset.Processes -or
+            $actualPreset.BatchSize -ne $preset.Images) {
+            throw "Wrong process/image configuration for preset $($preset.Choice)"
+        }
+        if ((Get-GpuBatchProcessLimit -Workers $preset.Processes -BatchSize $preset.Images) -ne $preset.Processes) {
+            throw "GPU process limit does not match preset $($preset.Choice)"
+        }
+        $testEntries = [System.Collections.Generic.List[object]]::new()
+        foreach ($number in 1..12) {
+            $source = Join-Path $encodeTemp ('benchmark_{0:D2}.png' -f $number)
+            [IO.File]::WriteAllBytes($source, [byte[]]@(1,2,3))
+            $testEntries.Add([pscustomobject]@{
+                SourcePath = $source
+                EntryName = ('benchmark_{0:D2}.avif' -f $number)
+                NeedsConversion = $true
+                Extension = '.png'
+                Length = 3L
+            })
+        }
+        Get-ChildItem -LiteralPath $logDir -Filter '*.txt' | Remove-Item -Force
+        $presetOutput = Join-Path $encodeTemp ('preset_' + $preset.Choice)
+        $converted = @(Invoke-GpuEncodeBatch -Entries $testEntries.ToArray() -FFmpeg $fakeEncoder -Quality 75 -Workers $preset.Processes -BatchSize $preset.Images -TempDir $presetOutput -OutputName ('preset_' + $preset.Choice))
+        if ($converted.Count -ne 12) { throw "Preset $($preset.Choice) produced only $($converted.Count) pages" }
+        foreach ($entry in $testEntries) { Test-AvifOutput -Path $entry.SourcePath }
+        $presetLogs = @(Get-ChildItem -LiteralPath $logDir -Filter '*.txt')
+        if ($presetLogs.Count -ne $preset.Launches) {
+            throw "Preset $($preset.Choice) expected $($preset.Launches) FFmpeg launches, got $($presetLogs.Count)"
+        }
+        $mapped = 0
+        foreach ($log in $presetLogs) {
+            $argsLine = @(Get-Content -LiteralPath $log.FullName)
+            $inputs = @($argsLine | Where-Object { $_ -eq '-i' }).Count
+            $maps = @($argsLine | Where-Object { $_ -eq '-map' }).Count
+            if ($inputs -lt 1 -or $inputs -gt $preset.Images -or $inputs -ne $maps) {
+                throw "Preset $($preset.Choice) has incorrect input/output mapping"
+            }
+            $mapped += $maps
+        }
+        if ($mapped -ne 12) { throw "Preset $($preset.Choice) omitted images" }
+    }
+    $entryCode = Get-Content -LiteralPath (Join-Path $repo 'scripts\Convert-Manga.ps1') -Raw -Encoding UTF8
+    if (-not $entryCode.Contains('Get-GpuBenchmarkPreset -Choice') -or
+        -not $entryCode.Contains('-GpuBatchSize $gpuBatchSize')) {
+        throw 'GPU choice must reach both sample search and full conversion'
+    }
+    Write-Host 'GPU benchmark presets 1-4: distinct FFmpeg processes and output mappings: OK'
+
     $env:BOOKCONV_ENCODE_FAIL = '1'
     $failed = $false
     $failEntries = [System.Collections.Generic.List[object]]::new()
