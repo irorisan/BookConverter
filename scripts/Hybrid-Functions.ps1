@@ -35,6 +35,7 @@ function Invoke-HybridEncode {
     New-Item -ItemType Directory -Path $TempDir | Out-Null
     $pending = [System.Collections.Generic.Queue[object]]::new()
     $fallback = [System.Collections.Generic.Queue[object]]::new()
+    $ready=@{Gpu=[System.Collections.Generic.Queue[object]]::new(); Cpu=[System.Collections.Generic.Queue[object]]::new()}
     $running = [System.Collections.Generic.List[object]]::new()
     $stats = [ordered]@{ GpuPages=0; CpuPages=0; GpuAttempts=0; CpuAttempts=0;
         GpuSeconds=0.0; CpuSeconds=0.0; Errors=0; Retries=0;
@@ -44,9 +45,9 @@ function Invoke-HybridEncode {
     $cpuLimit = $CpuWorkers
     try {
         for ($i=0; $i -lt $Entries.Count; $i++) {
-            $pending.Enqueue([pscustomobject]@{Entry=$Entries[$i]; Index=$i; Backend=''; Attempts=0; InputPath=$null; OutputPath=(Join-Path $TempDir ('page_{0:D6}.avif' -f $i)); Staged=$null; Process=$null; Started=0.0})
+            $pending.Enqueue([pscustomobject]@{Entry=$Entries[$i]; Index=$i; Backend=''; Attempts=0; InputPath=$null; OutputPath=(Join-Path $TempDir ('page_{0:D6}.avif' -f $i)); Staged=$null; Process=$null; Started=0.0; Preparing=$false})
         }
-        while ($pending.Count + $fallback.Count + $running.Count -gt 0) {
+        while ($pending.Count + $fallback.Count + $ready.Gpu.Count + $ready.Cpu.Count + $running.Count -gt 0) {
             if ($CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'Conversion cancelled' }
             # Reap before dispatch: retry and fallback always respect the same process caps.
             for ($i=$running.Count-1; $i -ge 0; $i--) {
@@ -59,6 +60,16 @@ function Invoke-HybridEncode {
                 $job.Process.Dispose(); $job.Process=$null
                 $running.RemoveAt($i)
                 $stats[$job.Backend+'Seconds'] += $elapsed
+                if ($job.Preparing) {
+                    if ($timedOut -or $code -ne 0 -or -not (Test-Path -LiteralPath $job.InputPath)) {
+                        $stats.Errors++
+                        throw "WebP decode failed: $($job.Entry.EntryName)"
+                    }
+                    $job.Preparing=$false; $job.Attempts--
+                    $stats[$job.Backend+'Attempts']--
+                    $ready[$job.Backend].Enqueue($job)
+                    continue
+                }
                 $valid = $false
                 if (-not $timedOut -and $code -eq 0) {
                     try { Test-AvifOutput -Path $job.OutputPath; $valid=$true } catch { $valid=$false }
@@ -90,7 +101,8 @@ function Invoke-HybridEncode {
                 $active = @($running | Where-Object { $_.Backend -eq $backend }).Count
                 while ($active -lt $limit) {
                     $job=$null
-                    if ($backend -eq 'Cpu' -and $fallback.Count -gt 0) { $job=$fallback.Dequeue() }
+                    if ($ready[$backend].Count -gt 0) { $job=$ready[$backend].Dequeue() }
+                    elseif ($backend -eq 'Cpu' -and $fallback.Count -gt 0) { $job=$fallback.Dequeue() }
                     elseif ($pending.Count -gt 0 -and ($backend -eq 'Gpu' -or $GpuWorkers -eq 0 -or $pending.Count -gt $GpuWorkers)) {
                         $job=$pending.Dequeue()
                     }
@@ -107,8 +119,7 @@ function Invoke-HybridEncode {
                             if ($job.Entry.Extension -eq '.webp') {
                                 if (-not $Decoder) { throw 'WebP requires dwebp' }
                                 $job.InputPath=[IO.Path]::ChangeExtension($job.Staged,'.png')
-                                & $Decoder -quiet $job.Staged -o $job.InputPath | Out-Null
-                                if ($LASTEXITCODE -ne 0) { throw 'WebP decode failed' }
+                                $job.Preparing=$true
                             }
                         }
                         $info=New-Object Diagnostics.ProcessStartInfo
@@ -116,6 +127,10 @@ function Invoke-HybridEncode {
                         $info.Arguments=if ($backend -eq 'Gpu') {
                             Get-GpuEncodeArguments -Quality $GpuQuality -InputPath $job.InputPath -OutputPath $job.OutputPath
                         } else { Get-HybridCpuArguments -Quality $CpuQuality -InputPath $job.InputPath -OutputPath $job.OutputPath }
+                        if ($job.Preparing) {
+                            $info.FileName=$Decoder
+                            $info.Arguments='-quiet "{0}" -o "{1}"' -f $job.Staged,$job.InputPath
+                        }
                         $info.UseShellExecute=$false; $info.CreateNoWindow=$true
                         $p=New-Object Diagnostics.Process; $p.StartInfo=$info
                         if (-not $p.Start()) { throw 'Encoder start failed' }
@@ -137,19 +152,22 @@ function Invoke-HybridEncode {
             if ($running.Count -gt 0) { Start-Sleep -Milliseconds 10 }
         }
         $success=$true
+    } catch {
+        $_.Exception.Data['HybridMetrics']=$stats
+        throw
     } finally {
         foreach ($job in $running) {
             try { if (-not $job.Process.HasExited) { $job.Process.Kill(); $job.Process.WaitForExit() } }
             finally { $job.Process.Dispose() }
         }
         $timer.Stop()
-        if (-not $success) { Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue }
-    }
     $stats.Seconds=$timer.Elapsed.TotalSeconds
     $stats.GpuIdleSlotSeconds=[Math]::Max(0,$GpuWorkers*$stats.Seconds-$stats.GpuSeconds)
     $stats.CpuIdleSlotSeconds=[Math]::Max(0,$cpuLimit*$stats.Seconds-$stats.CpuSeconds)
     $stats.GpuAverageSeconds=if ($stats.GpuAttempts) { $stats.GpuSeconds/$stats.GpuAttempts } else { 0 }
     $stats.CpuAverageSeconds=if ($stats.CpuAttempts) { $stats.CpuSeconds/$stats.CpuAttempts } else { 0 }
     $stats.PagesPerSecond=($stats.GpuPages+$stats.CpuPages)/[Math]::Max(0.000001,$stats.Seconds)
+        if (-not $success) { Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue }
+    }
     return [pscustomobject]$stats
 }

@@ -4,7 +4,7 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repo 'scripts/Hybrid-Functions.ps1')
 function Test-AvifOutput { param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { throw 'Missing output' }
-    if ((Get-Item -LiteralPath $Path).Length -ne 16) { throw 'Bad mock output' }
+    if ((Get-Item -LiteralPath $Path).Length -lt 16) { throw 'Bad mock output' }
 }
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('HybridTest_' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp | Out-Null
@@ -27,7 +27,11 @@ public class HybridMock {
   }
   if (fail == "cancel") File.WriteAllText(Environment.GetEnvironmentVariable("HYBRID_CANCEL"), "1");
   Thread.Sleep(fail == "timeout" ? 5000 : (gpu ? 80 : 150));
-  File.WriteAllBytes(dest, new byte[16]); return 0;
+  File.WriteAllBytes(dest, new byte[16]);
+  if (Environment.GetEnvironmentVariable("HYBRID_BIG") == "1") {
+   using (var stream = new FileStream(dest, FileMode.Open)) stream.SetLength(21*1024*1024);
+  }
+  return 0;
  }
 }
 '@
@@ -74,9 +78,50 @@ public class HybridMock {
     Remove-Item Env:HYBRID_FAIL -ErrorAction SilentlyContinue
     $stats = Invoke-HybridEncode -Entries (New-Entries 30).ToArray() -FFmpeg $exe -Avifenc $exe -GpuQuality 75 -CpuQuality 80 -GpuWorkers 12 -CpuWorkers 0 -TempDir (Join-Path $temp 'gpu')
     if ($stats.GpuPages -ne 30 -or $stats.CpuPages -ne 0 -or $stats.PeakGpu -gt 12) { throw 'GPU regression' }
-    Write-Host 'PASS: 250 pages, limits, overlap, order, fallback, retries, cancellation, timeout, GPU mode'
+    # Exercise the real quality search/full-conversion connection, cache reuse,
+    # ordered ZIP Store writer and hard size rejection with process mocks.
+    $tokens=$null; $errors=$null
+    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'scripts/Convert-Manga.ps1'),[ref]$tokens,[ref]$errors)
+    if ($errors) { throw $errors[0] }
+    foreach ($name in @('Invoke-ParallelAvif','Get-AvifSampleEstimate','Find-AvifQuality','Copy-VolumeEntries','Invoke-AutoSizeAvif')) {
+        $node=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true)
+        . ([scriptblock]::Create($node.Extent.Text))
+    }
+    . (Join-Path $repo 'scripts/Convert-Manga-Progress.ps1')
+    . (Join-Path $repo 'scripts/Convert-Manga-Zip.ps1')
+    function Invoke-GpuVerifyAvifBatch { param([string[]]$Paths,[string]$FFmpeg,[int]$Workers,[string]$CancelFile,[int]$TimeoutSeconds)
+        foreach ($path in $Paths) { Test-AvifOutput $path }
+    }
+    $ConversionMode='Hybrid'; $GpuWorkers=12; $CpuWorkers=4
+    $script:CpuEncoder=$exe; $script:HybridCpuQuality=95
+    $EncoderTimeoutSeconds=30; $CancelFile=$null
+    $script:EncodePasses=[System.Collections.Generic.List[object]]::new()
+    $book=Invoke-AutoSizeAvif -Entries (New-Entries 40) -Encoder $exe -Workers 12 -ScratchDir (Join-Path $temp 'auto') -OutputName 'test' -MaxTargetBytes 70MB -SampleSafetyBytes 2MB
+    if (-not $book.UnderLimit -or $book.Entries.Count -ne 40) { throw 'Quality pipeline failed' }
+    if (@($script:EncodePasses | Where-Object { $_.Phase -eq 'Full' -and $_.CpuPages -gt 0 }).Count -ne 1) { throw 'Hybrid full conversion was not selected' }
+    $zip=Join-Path $temp 'output.cbz'
+    Write-MangaStoredZip -Path $zip -Entries $book.Entries
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive=[IO.Compression.ZipFile]::OpenRead($zip)
+    try {
+        if ($archive.Entries.Count -ne 40) { throw 'Missing ZIP pages' }
+        for ($i=0; $i -lt 40; $i++) {
+            if ($archive.Entries[$i].FullName -cne $book.Entries[$i].EntryName -or $archive.Entries[$i].Length -ne 16) { throw 'Invalid ZIP order or size' }
+        }
+    } finally { $archive.Dispose() }
+    $env:HYBRID_BIG='1'
+    $caught=$false
+    try {
+        Invoke-AutoSizeAvif -Entries (New-Entries 4) -Encoder $exe -Workers 12 -ScratchDir (Join-Path $temp 'oversized') -OutputName 'big' -MaxTargetBytes 70MB -SampleSafetyBytes 2MB | Out-Null
+    } catch {
+        if ($_.Exception.Message -notmatch 'exceeded 70MiB') { throw }
+        $caught=$true
+    }
+    if (-not $caught) { throw 'Oversized conversion accepted' }
+    Write-Host 'PASS: 250 pages, limits, overlap, order, fallback, retries, cancellation, timeout, GPU, quality pipeline, CBZ, 70MiB rejection'
 } finally {
     Remove-Item Env:HYBRID_FAIL -ErrorAction SilentlyContinue
     Remove-Item Env:HYBRID_CANCEL -ErrorAction SilentlyContinue
+    Remove-Item Env:HYBRID_BIG -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 }

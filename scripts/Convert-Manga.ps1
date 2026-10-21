@@ -12,7 +12,8 @@
 )
 
 $ErrorActionPreference = 'Stop'
-if ($ConversionMode -ne 'Legacy') { $GPU = $true }
+if ($ConversionMode -in @('GPU','Hybrid')) { $GPU = $true }
+$script:ExperimentFailed=$false
 $script:CpuEncoder = $null
 $script:HybridCpuQuality = 95
 $script:EncodePasses = [System.Collections.Generic.List[object]]::new()
@@ -359,7 +360,7 @@ function Invoke-ParallelAvif {
         [string]::IsNullOrWhiteSpace($Decoder)) {
         throw 'WebP画像の入力にはdwebp.exeが必要です'
     }
-    if ($ConversionMode -ne 'Legacy') {
+    if ($ConversionMode -in @('GPU','Hybrid')) {
         $g = $GpuWorkers
         $c = if ($ConversionMode -eq 'Hybrid' -and $FullPass) { $CpuWorkers } else { 0 }
         $cpuQ = $script:HybridCpuQuality
@@ -371,6 +372,13 @@ function Invoke-ParallelAvif {
                 -TempDir $TempDir -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
             $pass | Add-Member -NotePropertyName Phase -NotePropertyValue $(if ($FullPass) {'Full'} else {'Sample'})
             $script:EncodePasses.Add($pass)
+        } catch {
+            if ($_.Exception.Data.Contains('HybridMetrics')) {
+                $pass=[pscustomobject]$_.Exception.Data['HybridMetrics']
+                $pass | Add-Member -NotePropertyName Phase -NotePropertyValue $(if ($FullPass) {'Full'} else {'Sample'})
+                $script:EncodePasses.Add($pass)
+            }
+            throw
         } finally {
             $encodeTimer.Stop()
             if ($null -ne $StageTimes) { $StageTimes['AVIF本変換'] += $encodeTimer.Elapsed }
@@ -378,7 +386,7 @@ function Invoke-ParallelAvif {
         # Samples must be decoded before their sizes/caches are trusted. Full pass
         # and reused/existing AVIFs are decoded together just before ZIP creation.
         if (-not $FullPass) {
-            Invoke-GpuVerifyAvifBatch -Paths ([string[]]@($pending.SourcePath)) -FFmpeg $Encoder -Workers 2
+            Invoke-GpuVerifyAvifBatch -Paths ([string[]]@($pending.SourcePath)) -FFmpeg $Encoder -Workers 2 -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
         }
         return $pending.Count
     }
@@ -804,7 +812,7 @@ function Invoke-AutoSizeAvif {
         if ($nextQuality -ge $quality) { $nextQuality = [int][Math]::Max(30, $quality - 1) }
         if ($nextQuality -eq $quality) { break }
         $quality = $nextQuality
-        if ($ConversionMode -ne 'Legacy') {
+        if ($ConversionMode -in @('GPU','Hybrid')) {
             $script:HybridCpuQuality=[Math]::Max(30,$script:HybridCpuQuality-5)
             Write-Warning "CPU own quality reduced to $script:HybridCpuQuality for size retry"
         }
@@ -812,7 +820,7 @@ function Invoke-AutoSizeAvif {
         Write-Warning ('70MiB超過。追加の品質テストは行わず、Q{0}で再試行します。' -f $quality)
     }
 
-    if ($ConversionMode -ne 'Legacy') { throw 'Experimental conversion exceeded 70MiB after size retries; no output committed' }
+    if ($ConversionMode -in @('GPU','Hybrid')) { throw 'Experimental conversion exceeded 70MiB after size retries; no output committed' }
     Write-Warning '70MiB以内に収まりませんでした。試した中で最小の結果を警告付きで保存します。'
     return [pscustomobject]@{
         Entries = $bestOversizeEntries
@@ -968,7 +976,7 @@ function Invoke-MangaBatch {
         }
 
     }
-    if ($ConversionMode -ne 'Legacy') {
+    if ($ConversionMode -in @('GPU','Hybrid')) {
         $workers=$GpuWorkers
         Write-Host "Experimental $ConversionMode : GPU $GpuWorkers / CPU $(if ($ConversionMode -eq 'Hybrid') {$CpuWorkers} else {0}), logged CPU fallback enabled"
     }
@@ -1163,7 +1171,7 @@ function Invoke-MangaBatch {
                 if (@($entries | Where-Object { $_.NeedsConversion }).Count -gt 0) {
                     if ($null -eq $encoder) {
                         $encoder = if ($GPU) { Find-FFmpegNvenc } else { Find-OrInstall-Avifenc }
-                        if ($ConversionMode -ne 'Legacy') {
+                        if ($ConversionMode -in @('GPU','Hybrid')) {
                             $script:CpuEncoder=Find-OrInstall-Avifenc
                             [void](Test-HybridAvifenc -Path $script:CpuEncoder)
                         }
@@ -1193,13 +1201,13 @@ function Invoke-MangaBatch {
                 }
             }
 
-            if ($ConversionMode -ne 'Legacy') {
+            if ($ConversionMode -in @('GPU','Hybrid')) {
                 $verifyTimer=[Diagnostics.Stopwatch]::StartNew()
                 try {
                     $avifs=[string[]]@($entries | Where-Object { [IO.Path]::GetExtension($_.SourcePath) -eq '.avif' } | ForEach-Object { $_.SourcePath })
                     if ($avifs.Count -gt 0) {
                         if (-not $encoder) { $encoder=Find-FFmpegNvenc }
-                        Invoke-GpuVerifyAvifBatch -Paths $avifs -FFmpeg $encoder -Workers 2
+                        Invoke-GpuVerifyAvifBatch -Paths $avifs -FFmpeg $encoder -Workers 2 -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
                     }
                 } finally { $verifyTimer.Stop(); $stageTimes['AVIFデコード検証'] += $verifyTimer.Elapsed }
             }
@@ -1229,9 +1237,10 @@ function Invoke-MangaBatch {
             finally { $check.Dispose() }
 
             # 一時CBZは出力先と同じディレクトリに作成。既存ファイルを上書きしない。
-            if ($ConversionMode -ne 'Legacy' -and $shouldCompress -and (Get-Item -LiteralPath $tempCbz).Length -gt $MaxTargetBytes) {
+            if ($ConversionMode -in @('GPU','Hybrid') -and $shouldCompress -and (Get-Item -LiteralPath $tempCbz).Length -gt $MaxTargetBytes) {
                 throw 'Final CBZ exceeds 70MiB; no output committed'
             }
+            if ($ConversionMode -in @('GPU','Hybrid') -and $CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'Conversion cancelled before commit' }
             [IO.File]::Move($tempCbz, $output)
             $reportStatus='Success'
             Write-Host "[OK] $outputName ($($images.Count)枚 / $formatLabel $converted 枚)" -ForegroundColor Green
@@ -1250,6 +1259,7 @@ function Invoke-MangaBatch {
         }
         catch {
             Write-Warning "FAIL: $($item.FullName) / $($_.Exception.Message)"
+            if ($ConversionMode -in @('GPU','Hybrid')) { $script:ExperimentFailed=$true }
             $failed++
         }
         finally {
@@ -1265,7 +1275,7 @@ function Invoke-MangaBatch {
             finally {
                 $volumeTimer.Stop()
                 Write-MangaTimingReport -Name $outputName -Stages $stageTimes -Total $volumeTimer.Elapsed
-                if ($ConversionMode -ne 'Legacy') {
+                if ($ConversionMode -in @('GPU','Hybrid')) {
                     $stageSeconds=[ordered]@{}
                     foreach ($key in $stageTimes.Keys) { $stageSeconds[$key]=$stageTimes[$key].TotalSeconds }
                     $report=[ordered]@{ Mode=$ConversionMode; Status=$reportStatus; Input=$item.FullName;
@@ -1273,9 +1283,10 @@ function Invoke-MangaBatch {
                         GpuWorkers=$GpuWorkers; CpuWorkers=$(if ($ConversionMode -eq 'Hybrid') {$CpuWorkers} else {0});
                         GpuQuality=$winningQuality; CpuQuality=$script:HybridCpuQuality;
                         Stages=$stageSeconds; Passes=@($script:EncodePasses.ToArray()) }
-                    if ($ReportDirectory) {
-                        New-Item -ItemType Directory -Path $ReportDirectory -Force | Out-Null
-                        $reportPath=Join-Path $ReportDirectory ([Guid]::NewGuid().ToString('N')+'.json')
+                    $metricsDir=if ($ReportDirectory) { $ReportDirectory } else { Join-Path $destinationDir 'metrics' }
+                    if ($metricsDir) {
+                        New-Item -ItemType Directory -Path $metricsDir -Force | Out-Null
+                        $reportPath=Join-Path $metricsDir ([Guid]::NewGuid().ToString('N')+'.json')
                         $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
                         Write-Host "  Metrics: $reportPath"
                     }
@@ -1324,4 +1335,5 @@ finally {
     Write-Progress -Id 2 -ParentId 1 -Activity 'BookConverter' -Completed
     Write-MangaOverallProgress -Completed 0 -Total 0 -Done
 }
+if ($script:ExperimentFailed) { exit 1 }
 exit 0

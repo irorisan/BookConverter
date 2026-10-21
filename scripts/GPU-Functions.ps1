@@ -60,7 +60,9 @@ function Invoke-GpuVerifyAvifBatch {
     param(
         [string[]]$Paths,
         [Parameter(Mandatory=$true)][string]$FFmpeg,
-        [ValidateRange(1,12)][int]$Workers = 8
+        [ValidateRange(1,12)][int]$Workers = 8,
+        [string]$CancelFile,
+        [ValidateRange(0,86400)][int]$TimeoutSeconds=0
     )
     if (-not $Paths -or $Paths.Count -eq 0) { return }
 
@@ -75,6 +77,12 @@ function Invoke-GpuVerifyAvifBatch {
     $verified = 0
     try {
         while ($verified -lt $Paths.Count) {
+            if ($CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'AVIF verification cancelled' }
+            if ($TimeoutSeconds -gt 0) {
+                foreach ($job in $running) {
+                    if (((Get-Date)-$job.Started).TotalSeconds -gt $TimeoutSeconds) { throw 'AVIF verification timed out' }
+                }
+            }
             while ($next -lt $Paths.Count -and $running.Count -lt $processLimit) {
                 $last = [Math]::Min($Paths.Count, $next + $batchSize) - 1
                 $group = [string[]]@($Paths[$next..$last])
@@ -88,7 +96,7 @@ function Invoke-GpuVerifyAvifBatch {
                     $p = New-Object System.Diagnostics.Process
                     $p.StartInfo = $info
                     if (-not $p.Start()) { throw "AVIF検証プロセスを起動できません: $($group[0])" }
-                    $running.Add([pscustomobject]@{ Process = $p; Paths = $group })
+                    $running.Add([pscustomobject]@{ Process = $p; Paths = $group; Started=(Get-Date) })
                     $p = $null
                 }
                 finally {

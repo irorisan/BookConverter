@@ -4,7 +4,8 @@
 
 既存入口はCPUとGPU BAT。GPUはFFmpeg av1_nvenc / VBR / p7 / hq /
 yuv420p / CQ50..15、品質探索は代表12枚・最大5回、全体再調整は最大3回。
-本変換は4出力×3プロセス（最大12セッション）であり12プロセスではない。
+調査開始時のチェックアウトは4出力×3プロセスだったが、最新mainへ追従し、
+既存GPUは品質探索・本変換とも1ページ×最大12プロセス固定を基準とする。
 CPUはtools/avifenc.exe、ルート、PATHから探索（なければ公式版導入）、
 従来設定は -q Q -s 6 -j 1。実行ファイルはリポジトリに含まれない。
 ZIP/CBZ/RARはWinRAR、EPUBはOPF/spine、フォルダは自然順。
@@ -25,7 +26,8 @@ CPUを最大1個使用する（通常CPU0）。フォールバックは警告・
 
 GPUの探索尺度とCPUのlibavif品質は同じ画質ではない。両者を独立に探索し、
 それぞれ「全ページをそのエンコーダーで処理した推定」が68MiB以下になる
-最大候補を選ぶ。CPUはAOM AV1 / 8bit / 4:2:0 / speed6 / jobs1を明示。
+最大候補を選ぶ。GPU実験の障害時CPU品質は独立指定q95（CPU探索を通常GPU計測へ加算しない）。
+Hybridは独立したCPU探索を行う。CPUはAOM AV1 / 8bit / 4:2:0 / speed6 / jobs1を明示。
 AVIFというコンテナとAV1というコーデックは共通でも、画質・色・容量の同等性は
 保証しない。CPU混在比率は実行時に変動するため、推定は保証ではない。
 実容量で既存の3回再調整を適用し、CPU側も自身の品質尺度を5ずつ下げる。
@@ -54,3 +56,26 @@ GPU失敗→CPU、CPU再試行/失敗、タイムアウト、キャンセル・�
 作業環境はLinux、RTX 5070 Ti / Windows PowerShell 5.1 / avifenc.exe未提供。
 実機のGPU対Hybrid中央値、画質同等性、実AVIF/CBZの70MiB境界、WinRAR E2Eは未検証。
 約41.7秒の参考値は今回の比較基準にしない。速度改善は未確認、既定への採用なし。
+
+実機測定例（新規の結果ディレクトリを指定、入力は60MiB超）:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Benchmark-Hybrid.ps1 -InputPath 'D:\books\test.cbz' -ResultsDirectory 'D:\bench\hybrid-01' -Repeats 3
+```
+
+WebPのdwebp展開も同じ枠の子プロセスとして実行し、親の配布ループをブロックしない。
+JPEG/PNGとWebPは別に計測してステージ処理の影響を確認する。
+
+ローカル検証: PowerShell 7/Linuxで250ページの実プロセスモック、上限16、
+GPUフォールバック・CPU再試行・失敗・キャンセル・タイムアウト・順序を確認。
+品質探索＋全変換＋キャッシュ再利用＋ZIP Storeの40ページ検査と84MiB超過拒否を確認。
+主スクリプトのCUI→JSON→CBZの接続も模擬エンコーダーで検査。
+これらは実AVIFのデコード・画質・GPU速度を検証した結果ではない。
+JSONは既定で出力先のmetricsへ保存、`-ReportDirectory`で変更可能。
+中止は`-CancelFile`に指定したファイルを作成するかCtrl+Cを使用する。
+通常のPowerShell中断はfinallyで子を停止するが、OSによる親プロセス強制終了・
+電源断はfinallyを実行できないため対象外。
+
+今後: RTX実機で同一入力3回以上、画質評価後に中央値を比較する。
+CPU終盤待ち・内部CPU負荷・WebP展開・CPU用探索の追加時間を見てCPU枠数を調整する。
+速度改善が確認されるまで既定には採用しない。
