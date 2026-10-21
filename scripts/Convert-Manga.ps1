@@ -383,11 +383,9 @@ function Invoke-ParallelAvif {
             $encodeTimer.Stop()
             if ($null -ne $StageTimes) { $StageTimes['AVIF本変換'] += $encodeTimer.Elapsed }
         }
-        # Samples must be decoded before their sizes/caches are trusted. Full pass
-        # and reused/existing AVIFs are decoded together just before ZIP creation.
-        if (-not $FullPass) {
-            Invoke-GpuVerifyAvifBatch -Paths ([string[]]@($pending.SourcePath)) -FFmpeg $Encoder -Workers 2 -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
-        }
+        # Each output has already passed the encoder exit-code and AVIF header checks.
+        # Sample candidates are size probes only. All final AVIFs, including reused
+        # samples, are fully decoded in Invoke-MangaBatch before the CBZ is saved.
         return $pending.Count
     }
     New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
