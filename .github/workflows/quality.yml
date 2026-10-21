@@ -78,6 +78,10 @@ jobs:
       - name: Validate synthetic baseline fixtures
         run: python -m unittest discover -s tests/baseline -p 'test_*.py' -v
 
+      - name: Validate one-time ANSI startup banner and plain fallback
+        shell: pwsh
+        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-banner.ps1
+
       - name: Validate PowerShell 7.6 syntax and progress helpers
         shell: pwsh
         run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-progress.ps1

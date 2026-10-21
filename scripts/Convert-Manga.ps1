@@ -34,6 +34,10 @@ $OutputFolderName = 'avif変換cbz'
 . (Join-Path $PSScriptRoot 'Convert-Manga-Epub.ps1')
 . (Join-Path $PSScriptRoot 'Convert-Manga-Progress.ps1')
 Initialize-MangaProgress
+. (Join-Path $PSScriptRoot 'Convert-Manga-Banner.ps1')
+$startupKind = if ($Magazine) { 'MAGAZINE' } else { 'MANGA' }
+$startupEngine = if ($ConversionMode -eq 'Hybrid') { 'HYBRID' } elseif ($GPU) { 'GPU' } else { 'CPU' }
+Write-MangaStartupBanner -Kind $startupKind -Engine $startupEngine
 . (Join-Path $PSScriptRoot 'Convert-Manga-Input.ps1')
 . (Join-Path $PSScriptRoot 'Convert-Manga-Zip.ps1')
 # PowerShell 1MB means 1MiB (1,048,576 bytes).
