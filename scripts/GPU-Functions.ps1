@@ -39,8 +39,33 @@ function Find-FFmpegNvenc {
         ' 必要な機能: av1_nvenc encoder と avif muxer。CPU版は別BATから起動できます。')
 }
 
-# Decode every AVIF (independent inputs and mapped streams) in a single FFmpeg
-# process for each bounded batch. Do not use stream copy: it bypasses decoding.
+# Select roughly one AVIF per ten pages plus the final AVIF. Include at
+# least one output from each encoder backend present in the final volume.
+function Select-AvifVerificationSamples {
+    param([Parameter(Mandatory=$true)][object[]]$Entries)
+    $avifs = @($Entries | Where-Object { [IO.Path]::GetExtension([string]$_.SourcePath) -eq '.avif' })
+    if ($avifs.Count -eq 0) { return @() }
+    $indexes = [System.Collections.Generic.SortedSet[int]]::new()
+    for ($i=0; $i -lt $avifs.Count; $i+=10) { [void]$indexes.Add($i) }
+    [void]$indexes.Add($avifs.Count-1)
+    foreach ($backend in @('Gpu','Cpu')) {
+        $first = -1
+        $covered = $false
+        for ($i=0; $i -lt $avifs.Count; $i++) {
+            $encodedBy = if ($avifs[$i].PSObject.Properties['EncodedBy']) { [string]$avifs[$i].EncodedBy } else { '' }
+            if ($encodedBy -ne $backend) { continue }
+            if ($first -eq -1) { $first = $i }
+            if ($indexes.Contains($i)) { $covered = $true; break }
+        }
+        if ($first -ge 0 -and -not $covered) { [void]$indexes.Add($first) }
+    }
+    $paths = [System.Collections.Generic.List[string]]::new()
+    foreach ($index in $indexes) { $paths.Add([string]$avifs[$index].SourcePath) }
+    return $paths.ToArray()
+}
+
+# Decode every SELECTED AVIF (independent inputs and mapped streams) in a single
+# FFmpeg process per bounded batch. Do not use stream copy: it bypasses decoding.
 function Get-GpuVerifyArguments {
     param([Parameter(Mandatory=$true)][ValidateCount(1,8)][string[]]$Paths)
     $parts = [System.Collections.Generic.List[string]]::new()
