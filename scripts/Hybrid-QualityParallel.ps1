@@ -1,5 +1,26 @@
 # PowerShell 7.6 ThreadJobs keep the independent GPU and CPU size searches
 # concurrent without introducing another executable or changing search criteria.
+
+# Independent of the CPU worker count used by the Hybrid full conversion.
+function Select-CpuProbeWorkers {
+    param([Nullable[int]]$Requested, [switch]$Interactive)
+    if ($null -ne $Requested) {
+        if ($Requested -lt 0 -or $Requested -gt 8) { throw 'CPU品質探索並列数は0～8で指定してください' }
+        return [int]$Requested
+    }
+    if (-not $Interactive) { return 4 }
+    while ($true) {
+        $answer = Read-MangaResponse 'CPU品質探索の並列数 [0-8]（Enterで4、0でCPU探索を省略）'
+        if ($null -eq $answer) { return $null }
+        $answer = $answer.Trim()
+        if ($answer -eq '') { return 4 }
+        $number = 0
+        if ([int]::TryParse($answer, [ref]$number) -and $number -ge 0 -and $number -le 8) {
+            return $number
+        }
+        Write-Host '0～8の整数かEnterを入力してください。' -ForegroundColor Yellow
+    }
+}
 function Invoke-HybridQualitySearch {
     param(
         [Parameter(Mandatory=$true)][System.Collections.Generic.List[object]]$Entries,
@@ -7,7 +28,7 @@ function Invoke-HybridQualitySearch {
         [Parameter(Mandatory=$true)][string]$CpuEncoder,
         [string]$Decoder,
         [Parameter(Mandatory=$true)][int]$GpuWorkers,
-        [Parameter(Mandatory=$true)][int]$CpuWorkers,
+        [Parameter(Mandatory=$true)][ValidateRange(0,8)][int]$CpuProbeWorkers,
         [Parameter(Mandatory=$true)][string]$ScratchDir,
         [Parameter(Mandatory=$true)][string]$VolumeName,
         [Parameter(Mandatory=$true)][long]$SampleLimitBytes,
@@ -33,7 +54,7 @@ function Invoke-HybridQualitySearch {
         }
         $ConversionMode='Hybrid'
         $GpuWorkers=[int]$context.GpuWorkers
-        $CpuWorkers=[int]$context.CpuWorkers
+        $CpuWorkers=[int]$context.CpuProbeWorkers
         $CancelFile=[string]$context.CancelFile
         $EncoderTimeoutSeconds=[int]$context.EncoderTimeoutSeconds
         $script:CpuEncoder=[string]$context.CpuEncoder
@@ -58,7 +79,8 @@ function Invoke-HybridQualitySearch {
     $succeeded=$false
     try{
         if($CancelFile -and (Test-Path -LiteralPath $CancelFile)){throw 'Quality search cancelled'}
-        foreach($backend in @('Gpu','Cpu')){
+        $backends=if($CpuProbeWorkers -eq 0){@('Gpu')}else{@('Gpu','Cpu')}
+        foreach($backend in $backends){
             $context=@{
                 Backend=$backend
                 Entries=$Entries
@@ -66,7 +88,7 @@ function Invoke-HybridQualitySearch {
                 CpuEncoder=$CpuEncoder
                 Decoder=$Decoder
                 GpuWorkers=$GpuWorkers
-                CpuWorkers=$CpuWorkers
+                CpuProbeWorkers=$CpuProbeWorkers
                 ScratchDir=$ScratchDir
                 VolumeName=$VolumeName
                 SampleLimitBytes=$SampleLimitBytes
@@ -97,14 +119,20 @@ function Invoke-HybridQualitySearch {
             }
             $results[$output[0].Backend]=$output[0]
         }
-        if(-not $results.ContainsKey('Gpu') -or -not $results.ContainsKey('Cpu')){
-            throw 'Missing GPU or CPU quality probe'
+        if(-not $results.ContainsKey('Gpu') -or ($CpuProbeWorkers -gt 0 -and -not $results.ContainsKey('Cpu'))){
+            throw 'Missing required GPU or CPU quality probe'
+        }
+        $passes=@($results.Gpu.Passes)
+        $cpuChoice=$null
+        if($CpuProbeWorkers -gt 0){
+            $passes+=@($results.Cpu.Passes)
+            $cpuChoice=$results.Cpu.Choice
         }
         $succeeded=$true
         return [pscustomobject]@{
             GpuChoice=$results.Gpu.Choice
-            CpuChoice=$results.Cpu.Choice
-            Passes=@($results.Gpu.Passes)+@($results.Cpu.Passes)
+            CpuChoice=$cpuChoice
+            Passes=$passes
         }
     }
     finally{
