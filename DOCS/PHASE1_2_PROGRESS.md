@@ -1,6 +1,6 @@
 # Phase 1 + Phase 2 — PowerShellコード登録とCUI進捗改善
 
-> 2026-10-21 / 対象: PowerShell 7.6（Windows / .NET 10）。開発規約: [AGENTS.md](../AGENTS.md)。主計画: [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)。
+> 2026-10-22更新 / 現在の対象: PowerShell 7.6（Windows / .NET 10）。開発規約: [AGENTS.md](../AGENTS.md)。主計画: [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)。
 
 ## 目的とスコープ
 
