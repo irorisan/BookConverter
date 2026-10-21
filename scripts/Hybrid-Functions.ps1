@@ -77,6 +77,7 @@ function Invoke-HybridEncode {
                 if ($valid) {
                     $job.Entry.SourcePath=$job.OutputPath
                     $job.Entry.Length=[long](Get-Item -LiteralPath $job.OutputPath).Length
+                    $job.Entry | Add-Member -NotePropertyName EncodedBy -NotePropertyValue $job.Backend -Force
                     $stats[$job.Backend+'Pages']++
                     Remove-Item -LiteralPath $job.Staged -Force -ErrorAction SilentlyContinue
                     if ($job.InputPath -ne $job.Staged) { Remove-Item -LiteralPath $job.InputPath -Force -ErrorAction SilentlyContinue }
