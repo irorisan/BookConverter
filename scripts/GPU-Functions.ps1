@@ -22,8 +22,8 @@ function Get-GpuEncodeArguments {
 
 function Find-FFmpegNvenc {
     $candidates = @(
-        (Join-Path $PSScriptRoot 'tools\ffmpeg.exe'),
-        (Join-Path $PSScriptRoot 'ffmpeg.exe')
+        (Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\ffmpeg.exe'),
+        (Join-Path (Split-Path -Parent $PSScriptRoot) 'ffmpeg.exe')
     )
     $command = Get-Command 'ffmpeg.exe' -CommandType Application -ErrorAction SilentlyContinue
     if ($command) { $candidates += $command.Source }
@@ -79,7 +79,7 @@ function Invoke-GpuVerifyAvifBatch {
                 $running.RemoveAt($i)
                 if ($code -ne 0) { throw "AVIFデコード検証に失敗しました: $($job.Path) (FFmpeg code $code)" }
                 # Independent libavif decode validation if avifdec was installed.
-                $avifdec = Join-Path $PSScriptRoot 'tools\avifdec.exe'
+                $avifdec = Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\avifdec.exe'
                 if (Test-Path -LiteralPath $avifdec -PathType Leaf) {
                     $testPng = [IO.Path]::ChangeExtension($job.Path, '.validated.png')
                     try {
