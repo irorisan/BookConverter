@@ -596,6 +596,7 @@ function Get-AvifSampleEstimate {
             Index = [int]$sample.SourceIndex
             Path = $sample.SourcePath
             Length = [long]$sample.Length
+            EncodedBy = [string]$sample.EncodedBy
         })
     }
     $estimate = [long][Math]::Round($unconverted +
@@ -666,6 +667,7 @@ function Copy-VolumeEntries {
             Length = [long]$entry.Length
             NeedsConversion = [bool]$entry.NeedsConversion
             Extension = $entry.Extension
+            EncodedBy = if ($entry.PSObject.Properties['EncodedBy']) { [string]$entry.EncodedBy } else { '' }
         })
     }
     return ,$out
@@ -732,6 +734,7 @@ function Invoke-AutoSizeAvif {
                 $trialEntries[$cached.Index].SourcePath = $cached.Path
                 $trialEntries[$cached.Index].Length = [long]$cached.Length
                 $trialEntries[$cached.Index].NeedsConversion = $false
+                $trialEntries[$cached.Index].EncodedBy = [string]$cached.EncodedBy
                 $reusedCount++
             }
         }
@@ -1155,6 +1158,7 @@ function Invoke-MangaBatch {
                     Length          = [long]$img.Length
                     NeedsConversion = $needsConversion
                     Extension       = $extension
+                    EncodedBy       = ''
                 })
             }
 
@@ -1202,10 +1206,12 @@ function Invoke-MangaBatch {
             if ($ConversionMode -in @('GPU','Hybrid')) {
                 $verifyTimer=[Diagnostics.Stopwatch]::StartNew()
                 try {
-                    $avifs=[string[]]@($entries | Where-Object { [IO.Path]::GetExtension($_.SourcePath) -eq '.avif' } | ForEach-Object { $_.SourcePath })
-                    if ($avifs.Count -gt 0) {
+                    $avifs=@($entries | Where-Object { [IO.Path]::GetExtension($_.SourcePath) -eq '.avif' })
+                    $samples=[string[]]@(Select-AvifVerificationSamples -Entries $avifs)
+                    if ($samples.Count -gt 0) {
                         if (-not $encoder) { $encoder=Find-FFmpegNvenc }
-                        Invoke-GpuVerifyAvifBatch -Paths $avifs -FFmpeg $encoder -Workers 2 -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
+                        Write-Host ('  AVIFサンプル検証: {0}/{1} 枚' -f $samples.Count,$avifs.Count) -ForegroundColor DarkCyan
+                        Invoke-GpuVerifyAvifBatch -Paths $samples -FFmpeg $encoder -Workers 2 -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
                     }
                 } finally { $verifyTimer.Stop(); $stageTimes['AVIFデコード検証'] += $verifyTimer.Elapsed }
             }
