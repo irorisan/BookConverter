@@ -336,7 +336,8 @@ function Invoke-ParallelAvif {
         [Parameter(Mandatory = $true)][int]$Quality,
         [Parameter(Mandatory = $true)][ValidateRange(1, 16)][int]$Workers,
         [Parameter(Mandatory = $true)][string]$TempDir,
-        [Parameter(Mandatory = $true)][string]$OutputName
+        [Parameter(Mandatory = $true)][string]$OutputName,
+        [System.Collections.IDictionary]$StageTimes
     )
 
     $pending = @($Entries | Where-Object { $_.NeedsConversion })
@@ -354,6 +355,7 @@ function Invoke-ParallelAvif {
     $activity = "AVIF並列変換: $OutputName"
     Write-Progress -Id 2 -ParentId 1 -Activity $activity -Status "0 / $($pending.Count)枚（並列数 $Workers）" -PercentComplete 0
 
+    $encodeTimer = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         while ($finished -lt $pending.Count) {
             while ($running.Count -lt $Workers -and $next -lt $pending.Count) {
@@ -456,9 +458,18 @@ function Invoke-ParallelAvif {
             finally { $job.Process.Dispose() }
         }
         Write-Progress -Id 2 -ParentId 1 -Activity $activity -Completed
+        $encodeTimer.Stop()
+        if ($null -ne $StageTimes) { $StageTimes['AVIF本変換'] += $encodeTimer.Elapsed }
     }
     if ($GPU) {
-        Invoke-GpuVerifyAvifBatch -Paths $gpuVerifyPaths.ToArray() -FFmpeg $Encoder -Workers ([Math]::Min(8, $Workers))
+        $verifyTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            Invoke-GpuVerifyAvifBatch -Paths $gpuVerifyPaths.ToArray() -FFmpeg $Encoder -Workers ([Math]::Min(8, $Workers))
+        }
+        finally {
+            $verifyTimer.Stop()
+            if ($null -ne $StageTimes) { $StageTimes['AVIFデコード検証'] += $verifyTimer.Elapsed }
+        }
     }
     return $finished
 }
@@ -626,7 +637,8 @@ function Invoke-AutoSizeAvif {
         [string]$ScratchDir,
         [string]$OutputName,
         [long]$MaxTargetBytes,
-        [long]$SampleSafetyBytes
+        [long]$SampleSafetyBytes,
+        [System.Collections.IDictionary]$StageTimes
     )
     # ZIPヘッダー・中央ディレクトリエントリによる増分も見込む。
     $zipOverheadBytes = [long]0
@@ -637,9 +649,16 @@ function Invoke-AutoSizeAvif {
     $maxImageBytes = [long][Math]::Max(1, $MaxTargetBytes - $zipOverheadBytes)
     $sampleLimit = [long][Math]::Max(1, $maxImageBytes - $SampleSafetyBytes)
     Write-MangaStage -Name $OutputName -Stage "品質探索"
-    $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
-        -Workers $Workers -ScratchDir $ScratchDir -VolumeName $OutputName `
-        -SampleLimitBytes $sampleLimit
+    $qualityTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
+            -Workers $Workers -ScratchDir $ScratchDir -VolumeName $OutputName `
+            -SampleLimitBytes $sampleLimit
+    }
+    finally {
+        $qualityTimer.Stop()
+        if ($null -ne $StageTimes) { $StageTimes['品質探索'] += $qualityTimer.Elapsed }
+    }
     $quality = $qualityChoice.Quality
     $selectedProbe = $qualityChoice.Probe
     $probes = @($qualityChoice.Probes)
@@ -670,7 +689,8 @@ function Invoke-AutoSizeAvif {
         Write-MangaStage -Name $OutputName -Stage "AVIF全ページ変換（$attempt / 3回, Q$quality）"
         Write-Host "  全ページ変換（$attempt / 最大3回）: 品質$quality / テスト画像再利用 $reusedCount 枚" -ForegroundColor Cyan
         [void](Invoke-ParallelAvif -Entries $trialEntries -Encoder $Encoder -Decoder $Decoder `
-            -Quality $quality -Workers $Workers -TempDir $trialDir -OutputName $OutputName)
+            -Quality $quality -Workers $Workers -TempDir $trialDir -OutputName $OutputName `
+            -StageTimes $StageTimes)
         $actualBytes = [long]0
         foreach ($entry in $trialEntries) { $actualBytes += [long]$entry.Length }
         Write-Host ('  AVIF画像の合計容量: {0:N1} MiB（Q{1}）' -f ($actualBytes / 1MB), $quality)
@@ -871,7 +891,7 @@ function Invoke-MangaBatch {
     Write-Host '元ファイルが60MiB以下: 変換なし（CBZならファイルをそのままコピー）'
     Write-Host '60MiB超: 代表12ページ・最大5回試算で68MiBを目安に品質を選択（上限70MiB）'
     if ($GPU) {
-        Write-Host 'NVENC GPUエンコード: preset p4 / yuv420p / 8並列がデフォルト' -ForegroundColor Cyan
+        Write-Host 'NVENC GPUエンコード: preset p7 / yuv420p / 8並列がデフォルト' -ForegroundColor Cyan
         Write-Host 'GPU変換に失敗した場合、黙ってCPUへ切り替えません。元ファイルは保持します。'
     }
     else { Write-Host 'AVIFエンコード速度: -s 6（従来どおり） / 元CBZは保持して avif変換cbz へ出力' }
