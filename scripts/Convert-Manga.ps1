@@ -204,8 +204,8 @@ function Find-WinRAR {
 
 function Find-OrInstall-Avifenc {
     $candidates = @(
-        (Join-Path $PSScriptRoot 'tools\avifenc.exe'),
-        (Join-Path $PSScriptRoot 'avifenc.exe')
+        (Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\avifenc.exe'),
+        (Join-Path (Split-Path -Parent $PSScriptRoot) 'avifenc.exe')
     )
     foreach ($candidate in $candidates) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
@@ -216,7 +216,7 @@ function Find-OrInstall-Avifenc {
 
     $apiUrl = 'https://api.github.com/repos/AOMediaCodec/libavif/releases/latest'
     $releasePage = 'https://github.com/AOMediaCodec/libavif/releases'
-    $toolsDir = Join-Path $PSScriptRoot 'tools'
+    $toolsDir = Join-Path (Split-Path -Parent $PSScriptRoot) 'tools'
     $target = Join-Path $toolsDir 'avifenc.exe'
     $downloadDir = Join-Path ([IO.Path]::GetTempPath()) ('AvifencSetup_' + [Guid]::NewGuid().ToString('N'))
     try {
@@ -267,7 +267,7 @@ function Find-OrInstall-Avifenc {
 # dwebpはWebPをPNGへ展開し、そのPNGをavifencへ渡すためだけに使用する。
 function Find-OrInstall-Dwebp {
     $candidates = @(
-        (Join-Path $PSScriptRoot 'tools\dwebp.exe'),
+        (Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\dwebp.exe'),
         (Join-Path $PSScriptRoot 'dwebp.exe')
     )
     foreach ($candidate in $candidates) {
@@ -277,7 +277,7 @@ function Find-OrInstall-Dwebp {
     if ($command) { return $command.Source }
 
     $url = 'https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0-windows-x64.zip'
-    $toolsDir = Join-Path $PSScriptRoot 'tools'
+    $toolsDir = Join-Path (Split-Path -Parent $PSScriptRoot) 'tools'
     $target = Join-Path $toolsDir 'dwebp.exe'
     $downloadDir = Join-Path ([IO.Path]::GetTempPath()) ('DwebpSetup_' + [Guid]::NewGuid().ToString('N'))
     try {
