@@ -80,3 +80,7 @@ jobs:
       - name: Smoke test distinct manga and magazine BAT modes
         shell: pwsh
         run: python tests/powershell/smoke_modes.py
+
+      - name: Validate experimental hybrid scheduler on PowerShell 5.1
+        shell: pwsh
+        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-hybrid.ps1
