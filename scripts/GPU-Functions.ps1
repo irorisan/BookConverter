@@ -22,6 +22,19 @@ function Get-GpuEncodeArguments {
 
 # Multiple independent AVIF outputs in one FFmpeg invocation.
 # Four streams per process and at most twelve outstanding NVENC sessions.
+# TEMPORARY: four comparable GPU encode layouts for real-world benchmarking.
+# Choice number is also the number of independent AVIFs per FFmpeg process.
+function Get-GpuBenchmarkPreset {
+    param([string]$Choice)
+    if ($Choice -notin @('1', '2', '3', '4')) { return $null }
+    $batchSize = [int]$Choice
+    return [pscustomobject]@{
+        Choice = $Choice
+        ProcessCount = [int](12 / $batchSize)
+        BatchSize = $batchSize
+    }
+}
+
 function Get-GpuBatchProcessLimit {
     param(
         [Parameter(Mandatory=$true)][ValidateRange(1,12)][int]$Workers,
@@ -61,14 +74,14 @@ function Invoke-GpuEncodeBatch {
         [Parameter(Mandatory=$true)][string]$FFmpeg,
         [Parameter(Mandatory=$true)][ValidateRange(30,95)][int]$Quality,
         [Parameter(Mandatory=$true)][ValidateRange(1,12)][int]$Workers,
+        [ValidateRange(1,4)][int]$BatchSize = 4,
         [Parameter(Mandatory=$true)][string]$TempDir,
         [Parameter(Mandatory=$true)][string]$OutputName,
         [string]$Decoder
     )
     if ($Entries.Count -eq 0) { return }
     New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
-    $batchSize = 4
-    $processLimit = Get-GpuBatchProcessLimit -Workers $Workers -BatchSize $batchSize
+    $processLimit = Get-GpuBatchProcessLimit -Workers $Workers -BatchSize $BatchSize
     $running = [System.Collections.Generic.List[object]]::new()
     $outputs = [System.Collections.Generic.List[string]]::new()
     $next = 0
