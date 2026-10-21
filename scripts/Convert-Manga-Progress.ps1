@@ -44,7 +44,7 @@ function Write-MangaOverallProgress {
         return
     }
     $status = '{0} / {1} 件処理済み | {2}' -f $Completed, $Total, $Name
-    Write-Progress -Id 1 -Activity 'BookConverter / 全体進捗' -Status $status `
+    Write-Progress -Id 1 -Activity 'BookConverter / 全体のタスク進捗' -Status $status `
         -PercentComplete (Get-MangaProgressPercent -Completed $Completed -Total $Total)
 }
 
