@@ -189,3 +189,6 @@ ONE PIECE/
 - JPEGやWebP→AVIFは**非可逆の再エンコード**です。画質が改善するわけではありません。Kavita・Mihonでの表紙とページ表示、細い文字・トーンを最初の1巻で確認してください。
 - 数値表記は「MiB」（1MiB = 1,048,576バイト）です。Windowsのファイル容量表示に近い単位です。
 - **WinRAR・avifenc・dwebpを使うWindows実機E2Eは未検証**です。CIではPowerShell 5.1のBAT連続変換・小型CBZのSHA-256・EPUB/spine・自然順・命名・容量境界を検証します。実機ドロップも未確認です。[実機の確認手順](DOCS/PHASE3_4_CONTINUOUS.md) に従い、初めに少数ページ・1巻で確認してください。
+GPU12＋CPU4の実験は [設計・測定手順](DOCS/HYBRID_AVIF.md) を参照。
+`Convert-Manga-Hybrid.bat`（漫画）または `scripts/Convert-Manga.ps1 -ConversionMode Hybrid`
+で明示起動する。比較用は `-ConversionMode GPU`。既存BATの既定動作は変わらない。
