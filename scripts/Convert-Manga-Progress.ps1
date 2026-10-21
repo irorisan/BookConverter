@@ -98,12 +98,12 @@ function Write-MangaOverallProgress {
     if($null -eq $script:MangaBatchClock){
         $script:MangaBatchClock=[Diagnostics.Stopwatch]::StartNew()
     }
-    $done=[Math]::Min([Math]::Max(0,$Completed),[Math]::Max(0,$Total))
-    $status='{0} / {1} 件 | {2}% | 経過 {3}' -f $done,$Total,
+    $completedCount=[Math]::Min([Math]::Max(0,$Completed),[Math]::Max(0,$Total))
+    $status='{0} / {1} 件 | {2}% | 経過 {3}' -f $completedCount,$Total,
         (Get-MangaProgressPercent -Completed $Completed -Total $Total),
         (Format-MangaElapsed -Duration $script:MangaBatchClock.Elapsed)
     $width=Get-MangaProgressWidth
-    if($width -lt 55){$status='{0} / {1} 件 | {2}%' -f $done,$Total,(Get-MangaProgressPercent -Completed $Completed -Total $Total)}
+    if($width -lt 55){$status='{0} / {1} 件 | {2}%' -f $completedCount,$Total,(Get-MangaProgressPercent -Completed $Completed -Total $Total)}
     elseif($width -ge 80 -and $Name){
         # Keep the title visible without letting Japanese names swallow the bar.
         $maxName=[Math]::Max(0,[int][Math]::Floor(($width-$status.Length-8)/2))
