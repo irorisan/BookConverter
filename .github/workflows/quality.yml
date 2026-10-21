@@ -16,6 +16,39 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      # The runner's preinstalled shell only bootstraps this pinned distribution.
+      - name: Install PowerShell 7.6.5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '7.6.5'
+          $asset = "PowerShell-$version-win-x64.zip"
+          $release = "https://github.com/PowerShell/PowerShell/releases/download/v$version"
+          $archive = Join-Path $env:RUNNER_TEMP $asset
+          $destination = Join-Path $env:RUNNER_TEMP "pwsh-$version"
+          Invoke-WebRequest "$release/$asset" -OutFile $archive
+          $hashFile = Join-Path $env:RUNNER_TEMP 'powershell-hashes.sha256'
+          Invoke-WebRequest "$release/hashes.sha256" -OutFile $hashFile
+          $hashes = Get-Content -LiteralPath $hashFile -Raw -Encoding utf8
+          $pattern = '(?im)^([a-f0-9]{64})\s+\*?' + [regex]::Escape($asset) + '\s*$'
+          $match = [regex]::Match($hashes, $pattern)
+          if (-not $match.Success) { throw 'Missing official SHA-256 for PowerShell ZIP' }
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $match.Groups[1].Value) {
+            throw 'PowerShell ZIP SHA-256 mismatch'
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination
+          $destination | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "BOOKCONVERTER_CI_PWSH=$destination" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify installed runtime and entrypoints
+        shell: pwsh
+        run: |
+          if ($PSVersionTable.PSVersion -ne [version]'7.6.5' -or $PSHOME -ne $env:BOOKCONVERTER_CI_PWSH -or
+              (Get-Command pwsh.exe).Source -ne (Join-Path $PSHOME 'pwsh.exe')) {
+            throw 'CI must use the explicitly installed PowerShell 7.6.5'
+          }
+          ./tests/powershell/test-runtime.ps1
+
       - name: Validate planning documents
         shell: python
         run: |
@@ -23,7 +56,7 @@ jobs:
           import re
 
           docs = Path("DOCS")
-          expected = [Path("AGENTS.md"), docs / "README.md", docs / "DEVELOPMENT_PLAN.md", docs / "PHASE0_BASELINE.md", docs / "PHASE1_2_PROGRESS.md", docs / "PHASE3_4_CONTINUOUS.md", docs / "MODE_SEPARATION.md"]
+          expected = [Path("AGENTS.md"), docs / "README.md", docs / "DEVELOPMENT_PLAN.md", docs / "PHASE0_BASELINE.md", docs / "PHASE1_2_PROGRESS.md", docs / "PHASE3_4_CONTINUOUS.md", docs / "MODE_SEPARATION.md", docs / "HYBRID_AVIF.md", docs / "POWERSHELL_7_6.md"]
           for file in expected:
               assert file.is_file(), f"Missing required document: {file}"
               content = file.read_text(encoding="utf-8")
@@ -41,13 +74,13 @@ jobs:
       - name: Validate synthetic baseline fixtures
         run: python -m unittest discover -s tests/baseline -p 'test_*.py' -v
 
-      - name: Validate PowerShell 5.1 syntax and progress helpers
+      - name: Validate PowerShell 7.6 syntax and progress helpers
         shell: pwsh
-        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-progress.ps1
+        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-progress.ps1
 
-      - name: Validate NVENC AVIF parameters and PowerShell 5.1 syntax
+      - name: Validate NVENC AVIF parameters and PowerShell 7.6 syntax
         shell: pwsh
-        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-gpu.ps1
+        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-gpu.ps1
 
       - name: Smoke test GPU entrypoints and unchanged small CBZ
         shell: pwsh
@@ -61,11 +94,11 @@ jobs:
         shell: pwsh
         run: python tests/powershell/smoke_cbz.py
 
-      - name: Validate literal input handling and UTF-8 BOM in PowerShell 5.1
+      - name: Validate literal input handling and UTF-8 in PowerShell 7.6
         shell: pwsh
-        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-input.ps1
+        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-input.ps1
 
-      - name: Smoke test continuous batches through BAT in PowerShell 5.1
+      - name: Smoke test continuous batches through BAT in PowerShell 7.6
         shell: pwsh
         run: python tests/powershell/smoke_continuous.py
 
@@ -75,12 +108,12 @@ jobs:
 
       - name: Validate ZIP Store writer ZIP64 boundary and output protection
         shell: pwsh
-        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-zip.ps1
+        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-zip.ps1
 
       - name: Smoke test distinct manga and magazine BAT modes
         shell: pwsh
         run: python tests/powershell/smoke_modes.py
 
-      - name: Validate experimental hybrid scheduler on PowerShell 5.1
+      - name: Validate hybrid AVIF samples and integration on PowerShell 7.6
         shell: pwsh
-        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-hybrid.ps1
+        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-hybrid.ps1

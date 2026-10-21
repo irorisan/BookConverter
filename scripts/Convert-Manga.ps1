@@ -1,4 +1,5 @@
-﻿param(
+#requires -Version 7.6
+param(
     [switch]$GPU,
     [ValidateSet('Legacy','GPU','Hybrid')][string]$ConversionMode='Legacy',
     [ValidateRange(1,12)][int]$GpuWorkers=12,
@@ -12,6 +13,9 @@
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $IsWindows -or $PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) {
+    throw 'BookConverter requires PowerShell 7.6.x on Windows (pwsh.exe).'
+}
 if ($ConversionMode -in @('GPU','Hybrid')) { $GPU = $true }
 $script:ExperimentFailed=$false
 $script:CpuEncoder = $null

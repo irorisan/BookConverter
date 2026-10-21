@@ -1,5 +1,5 @@
-﻿# EPUB 2/3 (reflowable images / fixed-layout manga) input adapter.
-# Invoke via dot sourcing from Convert-Manga.ps1. Windows PowerShell 5.1 compatible.
+# EPUB 2/3 (reflowable images / fixed-layout manga) input adapter.
+# Invoke via dot sourcing from Convert-Manga.ps1. PowerShell 7.6 on Windows compatible.
 # The ZIP remains read-only. Only the reading-order images are extracted to a private temp folder.
 
 function Read-EpubXml {

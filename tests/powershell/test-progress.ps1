@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $sourceFiles = @('Convert-Manga.ps1', 'Convert-Manga-Epub.ps1', 'Convert-Manga-Progress.ps1')
 foreach ($filename in $sourceFiles) {

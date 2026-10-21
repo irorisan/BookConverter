@@ -1,4 +1,4 @@
-﻿# .NET Framework ZipArchive/NoCompression emits Deflate, not ZIP method 0.
+# Streaming ZIP Store / ZIP64 writer compiled with Add-Type on .NET 10.
 # Keep the documented Store contract with a streaming, dependency-free writer.
 if (-not ('MangaStoredZip' -as [type])) {
     Add-Type -TypeDefinition @'

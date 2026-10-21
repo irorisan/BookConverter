@@ -1,4 +1,4 @@
-﻿# Experimental single-page process scheduler. Parent owns both queues and all entry mutations.
+# Experimental single-page process scheduler. Parent owns both queues and all entry mutations.
 function Get-HybridCpuArguments {
     param([int]$Quality, [string]$InputPath, [string]$OutputPath)
     foreach ($path in @($InputPath,$OutputPath)) {

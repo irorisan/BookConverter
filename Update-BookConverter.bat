@@ -6,7 +6,7 @@ if not exist "%~dp0scripts\Update-BookConverter.ps1" (
     pause
     exit /b 1
 )
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Update-BookConverter.ps1"
+pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Update-BookConverter.ps1"
 set "result=%ERRORLEVEL%"
 echo.
 if not "%result%"=="0" echo BookConverter update failed: %result%
