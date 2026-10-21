@@ -2,6 +2,8 @@
 # Run via Update-BookConverter.bat in the BookConverter root.
 # Replaces GitHub-managed files, never touches tools/, .git/, or manga input/output.
 
+param([string]$ArchivePath = '')
+
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $archiveUrl = 'https://github.com/irorisan/BookConverter/archive/refs/heads/main.zip'
@@ -27,7 +29,13 @@ try {
 
     # PowerShell 5.1 defaults can otherwise negotiate a deprecated protocol.
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri $archiveUrl -OutFile $zip -UseBasicParsing -TimeoutSec 180
+    if ([string]::IsNullOrWhiteSpace($ArchivePath)) {
+        Invoke-WebRequest -Uri $archiveUrl -OutFile $zip -UseBasicParsing -TimeoutSec 180
+    }
+    else {
+        # Offline fixture injection for the CI smoke test.
+        Copy-Item -LiteralPath $ArchivePath -Destination $zip -Force
+    }
     Expand-Archive -LiteralPath $zip -DestinationPath $unpacked -Force
 
     $source = Join-Path $unpacked 'BookConverter-main'
