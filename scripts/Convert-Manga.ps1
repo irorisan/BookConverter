@@ -346,6 +346,7 @@ function Test-AvifOutput {
 . (Join-Path $PSScriptRoot 'GPU-Functions.ps1')
 . (Join-Path $PSScriptRoot 'Hybrid-Functions.ps1')
 . (Join-Path $PSScriptRoot 'Hybrid-QualityParallel.ps1')
+. (Join-Path $PSScriptRoot 'Hybrid-GpuLed.ps1')
 
 function Invoke-ParallelAvif {
     param(
@@ -358,7 +359,8 @@ function Invoke-ParallelAvif {
         [Parameter(Mandatory = $true)][string]$OutputName,
         [System.Collections.IDictionary]$StageTimes,
         [switch]$FullPass,
-        [switch]$CpuProbe
+        [switch]$CpuProbe,
+        [switch]$GpuOnly
     )
 
     $pending = @($Entries | Where-Object { $_.NeedsConversion })
@@ -372,6 +374,7 @@ function Invoke-ParallelAvif {
         $c = if ($ConversionMode -eq 'Hybrid' -and $FullPass) { $CpuWorkers } else { 0 }
         $cpuQ = $script:HybridCpuQuality
         if ($CpuProbe) { $g=0; $c=$CpuWorkers; $cpuQ=$Quality }
+        if ($GpuOnly) { $g=$GpuWorkers; $c=0 }
         $encodeTimer = [Diagnostics.Stopwatch]::StartNew()
         try {
             $pass = Invoke-HybridEncode -Entries $pending -FFmpeg $Encoder -Avifenc $script:CpuEncoder `
@@ -704,6 +707,7 @@ function Invoke-AutoSizeAvif {
     $sampleLimit = [long][Math]::Max(1, $maxImageBytes - $SampleSafetyBytes)
     Write-MangaStage -Name $OutputName -Stage "品質探索"
     $qualityTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    $calibration = $null
     try {
         if ($ConversionMode -eq 'Hybrid') {
             $parallel = Invoke-HybridQualitySearch -Entries $Entries -Encoder $Encoder -CpuEncoder $script:CpuEncoder `
@@ -711,11 +715,14 @@ function Invoke-AutoSizeAvif {
                 -ScratchDir $ScratchDir -VolumeName $OutputName -SampleLimitBytes $sampleLimit `
                 -ScriptRoot $PSScriptRoot -CancelFile $CancelFile -EncoderTimeoutSeconds $EncoderTimeoutSeconds
             $qualityChoice = $parallel.GpuChoice
-            $script:HybridCpuQuality = if ($CpuProbeWorkers -eq 0) { 95 } else { $parallel.CpuChoice.Quality }
             foreach ($pass in $parallel.Passes) { $script:EncodePasses.Add($pass) }
             if ($CpuProbeWorkers -eq 0) {
-                Write-Host "  GPU quality: CQ$(Convert-GpuQualityToCq $qualityChoice.Quality); CPU probe skipped (CPU encode q95)"
+                $calibration = Invoke-GpuLedCpuCalibration -Entries $Entries -GpuProbe $qualityChoice.Probe `
+                    -Encoder $Encoder -Decoder $Decoder -ScratchDir $ScratchDir -VolumeName $OutputName
+                $script:HybridCpuQuality = $calibration.Quality
+                Write-Host "  GPU-led CPU calibration: GPU CQ$(Convert-GpuQualityToCq $qualityChoice.Quality), CPU q$($calibration.Quality)"
             } else {
+                $script:HybridCpuQuality = $parallel.CpuChoice.Quality
                 Write-Host "  Concurrent qualities: GPU CQ$(Convert-GpuQualityToCq $qualityChoice.Quality), CPU q$($script:HybridCpuQuality) ($CpuProbeWorkers workers)"
             }
         }
@@ -730,6 +737,12 @@ function Invoke-AutoSizeAvif {
         if ($null -ne $StageTimes) { $StageTimes['品質探索'] += $qualityTimer.Elapsed }
     }
     $quality = $qualityChoice.Quality
+    if ($ConversionMode -eq 'Hybrid' -and $CpuProbeWorkers -eq 0) {
+        return Invoke-GpuLedHybridConversion -Entries $Entries -GpuProbe $qualityChoice.Probe `
+            -Calibration $calibration -Encoder $Encoder -Decoder $Decoder -GpuQuality $quality `
+            -ScratchDir $ScratchDir -OutputName $OutputName -MaxImageBytes $maxImageBytes `
+            -GpuWorkers $GpuWorkers -CpuWorkers $CpuWorkers -StageTimes $StageTimes
+    }
     $selectedProbe = $qualityChoice.Probe
     $probes = @($qualityChoice.Probes)
     $bestOversizeEntries = $null
