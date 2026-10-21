@@ -37,7 +37,7 @@ function Invoke-ParallelAvif {
         $dest=Join-Path $TempDir ("encoded_{0:D2}.avif" -f $i)
         [IO.File]::WriteAllBytes($dest,[byte[]]::new($bytes))
         $e.SourcePath=$dest; $e.Length=[long]$bytes
-        $e.EncodedBy=$backend
+        $e | Add-Member -NotePropertyName EncodedBy -NotePropertyValue $backend -Force
     }
     return $pending.Count
 }
