@@ -115,4 +115,121 @@ finally {
 }
 Write-Host 'GPU batched decoding: all inputs mapped, 250 pages in 32 processes, failures propagated'
 
+
+# Phase 1: four independent NVENC AVIF output files per FFmpeg invocation.
+$pairs = @(1..4 | ForEach-Object {
+    [pscustomobject]@{
+        InputPath = ('C:\imgs\{0}.png' -f $_)
+        OutputPath = ('C:\out\{0}.avif' -f $_)
+    }
+})
+$batchedArgs = Get-GpuBatchEncodeArguments -Jobs $pairs -Quality 75
+foreach ($token in @('-preset p7', '-tune hq', '-rc vbr', '-frames:v 1', '-f avif')) {
+    if (-not $batchedArgs.Contains($token)) { throw "Missing batch encoder option: $token" }
+}
+foreach ($index in 0..3) {
+    if (-not $batchedArgs.Contains(('-map {0}:v:0' -f $index))) { throw "Missing batch output mapping: $index" }
+}
+if (($batchedArgs.Split([string[]]@(' -i '),[StringSplitOptions]::None).Count - 1) -ne 4) {
+    throw 'Every input must be passed independently to batch encoder'
+}
+if (($batchedArgs.Split([string[]]@(' -f avif '),[StringSplitOptions]::None).Count - 1) -ne 4) {
+    throw 'Each output must be a separate AVIF file'
+}
+if (($batchedArgs.Split([string[]]@(' -preset p7 '),[StringSplitOptions]::None).Count - 1) -ne 4) {
+    throw 'Each output must use NVENC p7'
+}
+if ((Get-GpuBatchProcessLimit -Workers 8 -BatchSize 4) -ne 3 -or
+    (Get-GpuBatchProcessLimit -Workers 1 -BatchSize 4) -ne 1) {
+    throw 'GPU batching may not exceed twelve simultaneous NVENC sessions'
+}
+
+$encodeTemp = Join-Path ([IO.Path]::GetTempPath()) ('BookConv_EncodeTest_' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $encodeTemp -Force | Out-Null
+try {
+    $fakeEncoder = Join-Path $encodeTemp 'fake_ffmpeg.exe'
+    $logDir = Join-Path $encodeTemp 'logs'
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    $code = @'
+using System;
+using System.IO;
+using System.Diagnostics;
+using System.Collections.Generic;
+public static class MockEncode {
+    public static int Main(string[] args) {
+        string log = Environment.GetEnvironmentVariable("BOOKCONV_ENCODE_LOGDIR");
+        File.WriteAllLines(Path.Combine(log, Process.GetCurrentProcess().Id.ToString() + ".txt"), args);
+        if (Environment.GetEnvironmentVariable("BOOKCONV_ENCODE_FAIL") == "1") return 15;
+        int inputs = 0, maps = 0;
+        var outputs = new List<string>();
+        bool preset = false;
+        for (int i=0; i<args.Length; i++) {
+            if (args[i] == "-i") inputs++;
+            if (args[i] == "-map") maps++;
+            if (args[i] == "-preset" && i+1<args.Length && args[i+1] == "p7") preset = true;
+            if (args[i].EndsWith(".avif", StringComparison.OrdinalIgnoreCase)) outputs.Add(args[i]);
+        }
+        if (inputs<1 || inputs>4 || maps != inputs || outputs.Count != inputs || !preset) return 16;
+        byte[] header = {0,0,0,16,102,116,121,112,97,118,105,102,0,0,0,0};
+        foreach (string path in outputs) File.WriteAllBytes(path, header);
+        return 0;
+    }
+}
+'@
+    Add-Type -TypeDefinition $code -OutputAssembly $fakeEncoder -OutputType ConsoleApplication -ErrorAction Stop
+    $env:BOOKCONV_ENCODE_LOGDIR = $logDir
+
+    # The GPU helper mutates entries in the same shape used by full-volume conversion.
+    function Test-AvifOutput {
+        param([string]$Path)
+        if (-not [IO.File]::Exists($Path)) { throw "Missing AVIF file: $Path" }
+        $bytes = [IO.File]::ReadAllBytes($Path)
+        if ([Text.Encoding]::ASCII.GetString($bytes, 4, 4) -ne 'ftyp' -or
+            [Text.Encoding]::ASCII.GetString($bytes, 8, 4) -ne 'avif') { throw 'Not an AVIF header' }
+    }
+    $images = [System.Collections.Generic.List[object]]::new()
+    1..9 | ForEach-Object {
+        $inputPath = Join-Path $encodeTemp ('source_{0:D2}.png' -f $_)
+        [IO.File]::WriteAllBytes($inputPath, [byte[]]@(1,2,3))
+        $images.Add([pscustomobject]@{
+            SourcePath = $inputPath
+            EntryName = ('page_{0:D2}.avif' -f $_)
+            NeedsConversion = $true
+            Extension = '.png'
+            Length = 3L
+        })
+    }
+    $outputDir = Join-Path $encodeTemp 'output'
+    $convertedPaths = @(Invoke-GpuEncodeBatch -Entries $images.ToArray() -FFmpeg $fakeEncoder -Quality 75 -Workers 8 -TempDir $outputDir -OutputName 'test')
+    if ($convertedPaths.Count -ne 9) { throw "Expected 9 encoded pages, got $($convertedPaths.Count)" }
+    foreach ($entry in $images) { Test-AvifOutput -Path $entry.SourcePath }
+    $logs = @(Get-ChildItem -LiteralPath $logDir -Filter '*.txt')
+    if ($logs.Count -ne 3) { throw "Expected 3 FFmpeg encoding launches for 9 pages, got $($logs.Count)" }
+    $counts = @($logs | ForEach-Object {
+        @((Get-Content -LiteralPath $_.FullName) | Where-Object { $_ -eq '-map' }).Count
+    } | Sort-Object)
+    if (($counts -join ',') -ne '1,4,4') { throw "Unexpected batch sizes: $($counts -join ',')" }
+
+    $env:BOOKCONV_ENCODE_FAIL = '1'
+    $failed = $false
+    $failEntries = [System.Collections.Generic.List[object]]::new()
+    $failEntries.Add([pscustomobject]@{
+        SourcePath = (Join-Path $encodeTemp 'source_01.png')
+        EntryName = 'bad.avif'
+        NeedsConversion = $true
+        Extension = '.png'
+        Length = 3L
+    })
+    try {
+        [void](Invoke-GpuEncodeBatch -Entries $failEntries.ToArray() -FFmpeg $fakeEncoder -Quality 75 -Workers 4 -TempDir (Join-Path $encodeTemp 'failed') -OutputName 'failed')
+    } catch { $failed = $true }
+    if (-not $failed) { throw 'Nonzero FFmpeg exit must fail the volume, never silently fall back to CPU' }
+}
+finally {
+    Remove-Item Env:BOOKCONV_ENCODE_LOGDIR -ErrorAction SilentlyContinue
+    Remove-Item Env:BOOKCONV_ENCODE_FAIL -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $encodeTemp -Recurse -Force -ErrorAction SilentlyContinue
+}
+Write-Host 'GPU encoding groups: separate AVIF outputs, 9 pages in 3 processes, failure propagation: OK'
+
 Write-Host 'GPU quality mapping, command arguments, PowerShell syntax and BATs: OK'
