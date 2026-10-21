@@ -1,4 +1,4 @@
-"""Offline Windows PowerShell 5.1 smoke test for private main-branch updater."""
+"""Offline Windows PowerShell 7.6 smoke test for private main-branch updater."""
 from __future__ import annotations
 
 import os
@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def run_updater(folder: Path, archive: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
-            "powershell.exe", "-NoLogo", "-NoProfile",
+            "pwsh.exe", "-NoLogo", "-NoProfile",
             "-ExecutionPolicy", "Bypass", "-File",
             str(folder / "scripts" / "Update-BookConverter.ps1"),
             "-ArchivePath", str(archive),
@@ -25,7 +25,7 @@ def run_updater(folder: Path, archive: Path) -> subprocess.CompletedProcess[str]
 
 def main() -> None:
     if os.name != "nt":
-        raise SystemExit("Requires Windows PowerShell 5.1")
+        raise SystemExit("Requires Windows PowerShell 7.6")
 
     with tempfile.TemporaryDirectory(prefix="bookconv-updater-") as tmp:
         temp = Path(tmp)

@@ -1,4 +1,4 @@
-﻿# Official NVIDIA GPU encoder for BookConverter (Windows PowerShell 5.1).
+# Official NVIDIA GPU encoder for BookConverter (PowerShell 7.6 on Windows).
 # CPU avifenc remains available through the original BAT files.
 # No silent CPU fallback on a failed GPU encode.
 

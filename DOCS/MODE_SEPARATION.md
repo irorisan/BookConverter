@@ -25,7 +25,7 @@
 4. 2バッチ連続処理 → 起動したモードを維持、作品名・進捗・結果の状態が次バッチへ漏れない。
 5. BATへファイルをドラッグ＆ドロップした場合、BAT引数なし起動でコンソールへパスを貼り付けた場合、どちらも動く。日本語・空白・引用符付きの入力も従来どおり。
 6. 60MiB以下の小型CBZ（通常・雑誌両方）は出力名だけ変更し、CBZのバイト列自体をコピー。ZIP/RAR/EPUB/フォルダも同じエンジンの従来の処理へ送る。
-7. Windows PowerShell 5.1の全PS1の構文・UTF-8 BOM、テスト成功、最新コミットのGitHub Actions `quality` 成功。実機でのWindows Terminalへのファイルドロップ、RAR/AVIFエンコーダーE2Eは未確認として記録する。
+7. PowerShell 7.6（Windows / .NET 10）の全PS1の構文・UTF-8、テスト成功、最新コミットのGitHub Actions `quality` 成功。実機でのWindows Terminalへのファイルドロップ、RAR/AVIFエンコーダーE2Eは未確認として記録する。
 
 ## 実装手順
 

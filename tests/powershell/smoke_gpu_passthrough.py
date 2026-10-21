@@ -14,7 +14,7 @@ def digest(path: Path) -> str:
 
 def main() -> None:
     if os.name != "nt":
-        raise SystemExit("Requires Windows PowerShell 5.1")
+        raise SystemExit("Requires Windows PowerShell 7.6")
     with tempfile.TemporaryDirectory(prefix="bookconv-gpu-passthrough-") as td:
         root = Path(td)
         for script, source_name, stdin in (

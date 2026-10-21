@@ -54,24 +54,24 @@ AVIFというコンテナとAV1というコーデックは共通でも、画質�
 
 受け入れテスト: 250ページ、GPU12/CPU4上限・同時稼働・順序・欠損重複、
 GPU失敗→CPU、CPU再試行/失敗、タイムアウト、キャンセル・後片付け、
-実験モードの容量超過拒否。Windows qualityでPS5.1構文とモックを実行。
+実験モードの容量超過拒否は製品の受け入れ条件として維持する。PowerShell 7.6移行で模擬EXE依存の実プロセステストは削除し、Windows qualityではサンプル抽出・構文・検証接続を検査する。削除範囲と未検証事項は [移行仕様](./POWERSHELL_7_6.md) を参照。
 
 ## 検証状況
 
-作業環境はLinux、RTX 5070 Ti / Windows PowerShell 5.1 / avifenc.exe未提供。
+移行検証環境はWindows / PowerShell 7.6.5 / .NET 10.0.11。RTX 5070 Ti・実エンコーダーを使う変換は今回実行していない。
 実機のGPU対Hybrid中央値、画質同等性、実AVIF/CBZの70MiB境界、WinRAR E2Eは未検証。
 約41.7秒の参考値は今回の比較基準にしない。速度改善は未確認、既定への採用なし。
 
 実機測定例（新規の結果ディレクトリを指定、入力は60MiB超）:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Benchmark-Hybrid.ps1 -InputPath 'D:\books\test.cbz' -ResultsDirectory 'D:\bench\hybrid-01' -Repeats 3
+pwsh.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Benchmark-Hybrid.ps1 -InputPath 'D:\books\test.cbz' -ResultsDirectory 'D:\bench\hybrid-01' -Repeats 3
 ```
 
 WebPのdwebp展開も同じ枠の子プロセスとして実行し、親の配布ループをブロックしない。
 JPEG/PNGとWebPは別に計測してステージ処理の影響を確認する。
 
-ローカル検証: PowerShell 7/Linuxで250ページの実プロセスモック、上限16、
+過去の実験時の検証記録（現在の7.6 CIで実行するテストではない）: PowerShell 7/Linuxで250ページの実プロセスモック、上限16、
 GPUフォールバック・CPU再試行・失敗・キャンセル・タイムアウト・順序を確認。
 品質探索＋全変換＋キャッシュ再利用＋ZIP Storeの40ページ検査と84MiB超過拒否を確認。
 主スクリプトのCUI→JSON→CBZの接続も模擬エンコーダーで検査。

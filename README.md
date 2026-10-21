@@ -4,7 +4,7 @@ Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-M
 
 ## プロジェクトについて
 
-- **実装はWindows PowerShell 5.1とBAT**。Tauri/Rustへの移行は行いません。
+- **実装はPowerShell 7.6（Windows / .NET 10）とBAT**。Tauri/Rustへの移行は行いません。
 - CUIには全巻の進捗、現在工程、AVIFエンコード枚数と終了集計、**変換所要時間（HH:MM:SS.1桁）**を表示します。さらに、各巻の終了時に入力準備・展開・品質探索・本変換・AVIF検証・CBZ作成/検証などの**工程別所要時間**を表示します。時間はシリーズ名・CPU版の並列数入力後から完了集計まで（解凍・品質探索・CBZ保存・検証を含む）を測定します。変換後は同じCUIで次の作品のパス入力を待ち、`q` / `exit` で終了します。
 - GitHubには第三者の `avifenc.exe` バイナリを含めていません。必要な場合は従来の自動取得、または `tools\avifenc.exe` への配置を利用してください。
 - 開発計画は [DOCS/DEVELOPMENT_PLAN.md](DOCS/DEVELOPMENT_PLAN.md) を参照してください。
@@ -24,7 +24,7 @@ Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-M
 - `ffmpeg.exe` は**同梱しません**。NVENCエンコーダー・AVIF muxer付きのWindowsビルドを用意し、`tools\ffmpeg.exe` に置くかPATHへ追加します。
 - GPU版は**FFmpeg 12プロセス × 各1画像**の固定構成です。品質探索とAVIF本変換の両方で、各プロセスが1画像ずつ独立したAVIFを作成します。GPU版では並列数の入力は不要です（CPU版は従来の1〜16並列を選択可能）。AVIFデコード検証は全ページを対象に**8画像ずつ・最大2プロセス**で実施します。**`-preset p7` 固定**、`-pix_fmt yuv420p`を維持します。250ページでの単回ベンチマークでは12×1が41.7秒、6×2が43.0秒、4×3が44.5秒、3×4が46.3秒でした。
 - 元ファイルが60MiB以下なら再圧縮しません。60MiB超では従来の最大12ページ×最大5回の試算で容量を調整し、70MiB以内を目指します。70MiB超過時は従来どおり警告付きで保存する場合があります。
-- GPUで生成されたAVIFはヘッダーと**全ページのFFmpegデコード**で検証します。検証は**8ページずつまとめてFFmpegを起動**する方式で、FFmpegの起動回数を削減します。250ページなら約32起動です（効果は環境で変動）。検証エラーは成功扱いにせず中断します。`tools\avifdec.exe` があればlibavifでの追加検証も全ページ実施します。
+- Legacy GPUで生成されたAVIFはヘッダーと**全ページのFFmpegデコード**で検証します。実験GPU/Hybridは [Hybrid仕様](DOCS/HYBRID_AVIF.md) の最終サンプル検証を使用します。検証は**8ページずつまとめてFFmpegを起動**する方式で、FFmpegの起動回数を削減します。250ページなら約32起動です（効果は環境で変動）。検証エラーは成功扱いにせず中断します。`tools\avifdec.exe` があればlibavifでの追加検証も全ページ実施します。
 - NVENC実行エラー時は**黙ってCPU版へ切り替えません**。元データを保持したまま当該巻を失敗扱いとします。CPUを使う場合は従来のBATで実行してください。
 - CPUの画質設定QとGPUのCQは同一画質を示すものではありません。GPUモードの品質探索は独立した尺度として扱います。
 - 出力先は両方式とも `avif変換cbz`。既存の同名作品があれば安全のためスキップするので、比較時は生成済みのCBZを別の場所に移してから再変換してください。
@@ -177,7 +177,7 @@ ONE PIECE/
 
 ## 必要なもの
 
-- Windows PowerShell 5.1（Windows標準）
+- PowerShell 7.6.x（Windows版、`pwsh.exe` をPATHへ登録）。Windows標準の5.1は対象外。インストール・移行・検証範囲は [PowerShell 7.6移行仕様](DOCS/POWERSHELL_7_6.md) を参照。
 - WinRAR（ZIP / CBZ / RARを展開する場合。60MiB以下のCBZ原本コピー・EPUB・フォルダ入力では不要）
 - AOMedia公式 `avifenc.exe`：最初のAVIF変換時に公式リリースから自動取得。自動取得できない場合は `tools\avifenc.exe` に配置。
 - Google公式 `dwebp.exe`：元CBZにWebP画像がある場合だけ必要。自動取得が失敗した場合は `tools\dwebp.exe` に配置。
@@ -188,7 +188,7 @@ ONE PIECE/
 
 - JPEGやWebP→AVIFは**非可逆の再エンコード**です。画質が改善するわけではありません。Kavita・Mihonでの表紙とページ表示、細い文字・トーンを最初の1巻で確認してください。
 - 数値表記は「MiB」（1MiB = 1,048,576バイト）です。Windowsのファイル容量表示に近い単位です。
-- **WinRAR・avifenc・dwebpを使うWindows実機E2Eは未検証**です。CIではPowerShell 5.1のBAT連続変換・小型CBZのSHA-256・EPUB/spine・自然順・命名・容量境界を検証します。実機ドロップも未確認です。[実機の確認手順](DOCS/PHASE3_4_CONTINUOUS.md) に従い、初めに少数ページ・1巻で確認してください。
+- **WinRAR・avifenc・dwebpを使うWindows実機E2Eは未検証**です。CIではPowerShell 7.6のBAT連続変換・小型CBZのSHA-256・EPUB/spine・自然順・命名・容量境界を検証します。実機ドロップも未確認です。[実機の確認手順](DOCS/PHASE3_4_CONTINUOUS.md) に従い、初めに少数ページ・1巻で確認してください。
 GPU12＋CPU4の実験は [設計・測定手順](DOCS/HYBRID_AVIF.md) を参照。
 `Convert-Manga-Hybrid.bat`（漫画）または `scripts/Convert-Manga.ps1 -ConversionMode Hybrid`
 で明示起動する。比較用は `-ConversionMode GPU`。既存BATの既定動作は変わらない。

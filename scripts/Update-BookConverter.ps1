@@ -1,10 +1,14 @@
-﻿# BookConverter personal main-branch updater (Windows PowerShell 5.1).
+#requires -Version 7.6
+# BookConverter personal main-branch updater (PowerShell 7.6 on Windows).
 # Run via Update-BookConverter.bat in the BookConverter root.
 # Replaces GitHub-managed files, never touches tools/, .git/, or manga input/output.
 
 param([string]$ArchivePath = '')
 
 $ErrorActionPreference = 'Stop'
+if (-not $IsWindows -or $PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) {
+    throw 'BookConverter requires PowerShell 7.6.x on Windows (pwsh.exe).'
+}
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $archiveUrl = 'https://github.com/irorisan/BookConverter/archive/refs/heads/main.zip'
 $work = Join-Path ([IO.Path]::GetTempPath()) ('BookConverterUpdate_' + [guid]::NewGuid().ToString('N'))
@@ -17,10 +21,8 @@ try {
     Write-Host 'BookConverter: downloading latest GitHub main...' -ForegroundColor Cyan
     New-Item -Path $work -ItemType Directory -Force | Out-Null
 
-    # PowerShell 5.1 defaults can otherwise negotiate a deprecated protocol.
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     if ([string]::IsNullOrWhiteSpace($ArchivePath)) {
-        Invoke-WebRequest -Uri $archiveUrl -OutFile $zip -UseBasicParsing -TimeoutSec 180
+        Invoke-WebRequest -Uri $archiveUrl -OutFile $zip -TimeoutSec 180
     }
     else {
         # Offline fixture injection for the CI smoke test.

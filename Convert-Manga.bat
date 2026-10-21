@@ -8,7 +8,7 @@ if not exist "%~dp0scripts\Convert-Manga.ps1" (
     exit /b 1
 )
 
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Convert-Manga.ps1" %*
+pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Convert-Manga.ps1" %*
 set "result=%ERRORLEVEL%"
 
 if not "%result%"=="0" (

@@ -14,7 +14,7 @@
 - [x] 静的コードとREADMEの主要処理を照合し、期待動作をケース化する。
 - [x] 第三者作品を含まない再生成可能な合成データを用意する。
 - [x] 自動テストでフィクスチャの構造・内容・順序を検証する。
-- [ ] Windows PowerShell 5.1実機で旧スクリプトを実行し、ログ/出力と予想を照合する。
+- [ ] PowerShell 7.6（Windows / .NET 10）実機で旧スクリプトを実行し、ログ/出力と予想を照合する。
 - [ ] AVIF品質選択の時間・出力容量を計測しベースライン値を記録する。
 - [ ] WinRAR、`avifenc`、`dwebp`を含む依存環境を記録する。
 
@@ -72,7 +72,7 @@ python tests/baseline/generate_fixtures.py --out tests/baseline/_generated --lar
 
 ## 4. Windows実機スモークテスト（未実施）
 
-1. 必要なバージョンを記録する：Windows版、PowerShell 5.1、WinRAR、`avifenc --version`（使用可能なら）、`dwebp -version`、論理CPU、ストレージの種類。
+1. 必要なバージョンを記録する：Windows版、PowerShell 7.6、WinRAR、`avifenc --version`（使用可能なら）、`dwebp -version`、論理CPU、ストレージの種類。
 2. **原本ZIPは読み取り専用のコピーに展開**する。サンプルフォルダ/ZIP/EPUBの生成物だけをドラッグ＆ドロップする。シリーズ名として `ONE PIECE`、並列数はEnter（自動）を選択。
 3. 1回目：小さいCBZ/EPUB/画像フォルダを個別または同じ作品の巻で試す。別作品を一括投入する場合はシリーズ名の一括適用に注意し、別バッチに分ける。
 4. 出力CBZのファイル名、画像枚数、**ZIP内ページ順**、元画像のハッシュ、元データの変更なし、同名スキップを照合する。
@@ -111,5 +111,5 @@ python tests/baseline/generate_fixtures.py --out tests/baseline/_generated --lar
 - 現行スクリプトの工程（入力検出、品質探索、変換、圧縮、検証）を調べ、コンソール進捗を表示する箇所を特定する。
 - **まずDOCSを更新し、テストで現在の問題を表現してから**、PowerShell標準の進捗表示・終了サマリーを必要最小限で追加する。
 - 変換完了後に入力待機へ戻り、**同じCUIで別作品を続けて処理**できることを回帰テストに追加する。初回BAT引数/引数なし起動、引用符付き日本語パス、前回バッチからの状態初期化、エラー後の再試行、`q`/`exit`での終了を検証する。コンソールのドロップ対応はWindows実機で別途確認する。
-- `quality` にはWindows PowerShell 5.1の構文・進捗・入力と、Pythonから実BATを駆動する連続変換スモークを導入済み。`tests/baseline` のPythonテストは合成入力の構造検査。実変換検証は `tests/powershell` を参照。
+- `quality` にはPowerShell 7.6（Windows / .NET 10）の構文・進捗・入力と、Pythonから実BATを駆動する連続変換スモークを導入済み。`tests/baseline` のPythonテストは合成入力の構造検査。実変換検証は `tests/powershell` を参照。
 - Windowsで未実測の項目は残存リスクとしてPRに明記する。Phase 0の静的基準とフィクスチャは用意できているが、**Windowsでの実測結果はまだない**。

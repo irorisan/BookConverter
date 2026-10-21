@@ -21,7 +21,7 @@ def sha256(path: Path) -> str:
 
 def main() -> None:
     if os.name != "nt":
-        raise SystemExit("Smoke requires Windows powershell.exe")
+        raise SystemExit("Smoke requires Windows pwsh.exe")
     with tempfile.TemporaryDirectory(prefix="bookconv-") as directory:
         root = Path(directory)
         source = root / "日本語の漫画 v01.cbz"
@@ -30,7 +30,7 @@ def main() -> None:
         before = sha256(source)
         # Two empty responses: accepted series name, and automatic workers.
         result = subprocess.run(
-            ["powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            ["pwsh.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
              "-File", str(ROOT / "scripts" / "Convert-Manga.ps1"), str(source)],
             input="\n\nq\n", capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=120, check=False,

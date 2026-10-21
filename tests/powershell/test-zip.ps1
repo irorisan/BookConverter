@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $root 'scripts\Convert-Manga-Zip.ps1')
 Add-Type -AssemblyName System.IO.Compression.FileSystem

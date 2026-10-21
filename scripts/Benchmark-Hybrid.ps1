@@ -1,9 +1,13 @@
-﻿param(
+#requires -Version 7.6
+param(
     [Parameter(Mandatory=$true)][string]$InputPath,
     [Parameter(Mandatory=$true)][string]$ResultsDirectory,
     [ValidateRange(3,20)][int]$Repeats=3
 )
 $ErrorActionPreference='Stop'
+if (-not $IsWindows -or $PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) {
+    throw 'BookConverter requires PowerShell 7.6.x on Windows (pwsh.exe).'
+}
 $source=Get-Item -LiteralPath $InputPath
 if ($source.PSIsContainer) { throw 'Benchmark requires one archive file (same immutable bytes for every run)' }
 if ($source.Length -le 60MB) { throw 'Input must exceed 60MiB to measure encoding' }
@@ -40,7 +44,7 @@ for ($round=1; $round -le $Repeats; $round++) {
         # Magazine mode removes title prompts; configured modes remove worker prompts.
         # EOF ends the normal continuous-input loop after one volume.
         $psi=New-Object Diagnostics.ProcessStartInfo
-        $psi.FileName='powershell.exe'
+        $psi.FileName=Join-Path $PSHOME 'pwsh.exe'
         $psi.Arguments='-NoLogo -NoProfile -ExecutionPolicy Bypass -File "{0}" -Magazine -ConversionMode {1} -GpuWorkers 12 -CpuWorkers 4 -ReportDirectory "{2}" "{3}"' -f $scriptPath,$mode,$metrics,$copy
         $psi.UseShellExecute=$false; $psi.RedirectStandardInput=$true
         $p=New-Object Diagnostics.Process; $p.StartInfo=$psi

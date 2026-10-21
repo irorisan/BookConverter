@@ -1,4 +1,4 @@
-﻿# Literal paths only. This is not a PowerShell/cmd command-line parser.
+# Literal paths only. This is not a PowerShell/cmd command-line parser.
 function Split-MangaInput {
     param([string]$Line)
     if ([string]::IsNullOrWhiteSpace($Line)) { return }
