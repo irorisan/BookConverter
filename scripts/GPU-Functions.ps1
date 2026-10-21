@@ -39,6 +39,23 @@ function Find-FFmpegNvenc {
         ' 必要な機能: av1_nvenc encoder と avif muxer。CPU版は別BATから起動できます。')
 }
 
+# Decode every AVIF (independent inputs and mapped streams) in a single FFmpeg
+# process for each bounded batch. Do not use stream copy: it bypasses decoding.
+function Get-GpuVerifyArguments {
+    param([Parameter(Mandatory=$true)][ValidateCount(1,8)][string[]]$Paths)
+    $parts = [System.Collections.Generic.List[string]]::new()
+    $parts.Add('-hide_banner -loglevel error -nostdin -xerror -max_error_rate 0')
+    foreach ($path in $Paths) {
+        if ($path.Contains('"')) { throw "AVIF検証パスに引用符が含まれています: $path" }
+        $parts.Add(('-i "{0}"' -f $path))
+    }
+    for ($i = 0; $i -lt $Paths.Count; $i++) {
+        $parts.Add(('-map {0}:v:0' -f $i))
+    }
+    $parts.Add('-f null NUL')
+    return ($parts -join ' ')
+}
+
 function Invoke-GpuVerifyAvifBatch {
     param(
         [string[]]$Paths,
@@ -46,29 +63,40 @@ function Invoke-GpuVerifyAvifBatch {
         [ValidateRange(1,12)][int]$Workers = 8
     )
     if (-not $Paths -or $Paths.Count -eq 0) { return }
+
+    # 8 independent AVIF streams per invocation, with at most 2 concurrent
+    # FFmpeg processes to avoid excessive decoder memory and thread counts.
+    $batchSize = 8
+    $processLimit = [Math]::Min(2, $Workers)
+    $avifdec = Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\avifdec.exe'
+    $hasAvifdec = Test-Path -LiteralPath $avifdec -PathType Leaf
     $running = [System.Collections.Generic.List[object]]::new()
     $next = 0
     $verified = 0
     try {
         while ($verified -lt $Paths.Count) {
-            while ($next -lt $Paths.Count -and $running.Count -lt $Workers) {
-                $path = $Paths[$next]
+            while ($next -lt $Paths.Count -and $running.Count -lt $processLimit) {
+                $last = [Math]::Min($Paths.Count, $next + $batchSize) - 1
+                $group = [string[]]@($Paths[$next..$last])
                 $p = $null
                 try {
                     $info = New-Object System.Diagnostics.ProcessStartInfo
                     $info.FileName = $FFmpeg
-                    $info.Arguments = '-hide_banner -loglevel error -i "{0}" -frames:v 1 -f null NUL' -f $path
+                    $info.Arguments = Get-GpuVerifyArguments -Paths $group
                     $info.UseShellExecute = $false
                     $info.CreateNoWindow = $true
                     $p = New-Object System.Diagnostics.Process
                     $p.StartInfo = $info
-                    if (-not $p.Start()) { throw "AVIF検証プロセスを起動できません: $path" }
-                    $running.Add([pscustomobject]@{ Process=$p; Path=$path })
+                    if (-not $p.Start()) { throw "AVIF検証プロセスを起動できません: $($group[0])" }
+                    $running.Add([pscustomobject]@{ Process = $p; Paths = $group })
                     $p = $null
                 }
-                finally { if ($null -ne $p) { $p.Dispose() } }
-                $next++
+                finally {
+                    if ($null -ne $p) { $p.Dispose() }
+                }
+                $next = $last + 1
             }
+
             $gotResult = $false
             for ($i = $running.Count - 1; $i -ge 0; $i--) {
                 $job = $running[$i]
@@ -77,25 +105,31 @@ function Invoke-GpuVerifyAvifBatch {
                 $code = $job.Process.ExitCode
                 $job.Process.Dispose()
                 $running.RemoveAt($i)
-                if ($code -ne 0) { throw "AVIFデコード検証に失敗しました: $($job.Path) (FFmpeg code $code)" }
-                # Independent libavif decode validation if avifdec was installed.
-                $avifdec = Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\avifdec.exe'
-                if (Test-Path -LiteralPath $avifdec -PathType Leaf) {
-                    $testPng = [IO.Path]::ChangeExtension($job.Path, '.validated.png')
-                    try {
-                        & $avifdec $job.Path $testPng | Out-Null
-                        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $testPng -PathType Leaf)) {
-                            throw "libavifによるデコード検証に失敗しました: $($job.Path)"
+                if ($code -ne 0) {
+                    throw ("AVIFデコード検証に失敗しました: FFmpeg code {0} / 対象 {1}" -f $code, ($job.Paths -join ', '))
+                }
+
+                foreach ($path in $job.Paths) {
+                    # Keep optional independent libavif validation for every page.
+                    if ($hasAvifdec) {
+                        $testPng = [IO.Path]::ChangeExtension($path, '.validated.png')
+                        try {
+                            & $avifdec $path $testPng | Out-Null
+                            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $testPng -PathType Leaf)) {
+                                throw "libavifによるデコード検証に失敗しました: $path"
+                            }
+                        }
+                        finally {
+                            Remove-Item -LiteralPath $testPng -Force -ErrorAction SilentlyContinue
                         }
                     }
-                    finally { Remove-Item -LiteralPath $testPng -Force -ErrorAction SilentlyContinue }
+                    $verified++
                 }
-                $verified++
                 if ($verified -eq $Paths.Count -or ($verified % 20) -eq 0) {
                     Write-Host ("  AVIF検証: {0}/{1} 枚" -f $verified, $Paths.Count) -ForegroundColor DarkCyan
                 }
             }
-            if (-not $gotResult) { Start-Sleep -Milliseconds 50 }
+            if (-not $gotResult) { Start-Sleep -Milliseconds 20 }
         }
     }
     finally {
