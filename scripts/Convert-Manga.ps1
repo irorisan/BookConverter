@@ -337,9 +337,7 @@ function Invoke-ParallelAvif {
         [Parameter(Mandatory = $true)][ValidateRange(1, 16)][int]$Workers,
         [Parameter(Mandatory = $true)][string]$TempDir,
         [Parameter(Mandatory = $true)][string]$OutputName,
-        [System.Collections.IDictionary]$StageTimes,
-        [switch]$GpuBatch,
-        [ValidateRange(1,4)][int]$GpuBatchSize = 4
+        [System.Collections.IDictionary]$StageTimes
     )
 
     $pending = @($Entries | Where-Object { $_.NeedsConversion })
@@ -349,29 +347,6 @@ function Invoke-ParallelAvif {
         throw 'WebP画像の入力にはdwebp.exeが必要です'
     }
     New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
-
-    if ($GPU -and $GpuBatch) {
-        # Share the selected GPU batch layout between quality sampling and full encoding.
-        # CPU mode still uses the unchanged avifenc implementation.
-        $batchTimer = [System.Diagnostics.Stopwatch]::StartNew()
-        try {
-            $convertedPaths = @(Invoke-GpuEncodeBatch -Entries $pending -FFmpeg $Encoder -Decoder $Decoder `
-                -Quality $Quality -Workers $Workers -BatchSize $GpuBatchSize -TempDir $TempDir -OutputName $OutputName)
-        }
-        finally {
-            $batchTimer.Stop()
-            if ($null -ne $StageTimes) { $StageTimes['AVIF本変換'] += $batchTimer.Elapsed }
-        }
-        $verifyTimer = [System.Diagnostics.Stopwatch]::StartNew()
-        try {
-            Invoke-GpuVerifyAvifBatch -Paths $convertedPaths -FFmpeg $Encoder -Workers ([Math]::Min(8, $Workers))
-        }
-        finally {
-            $verifyTimer.Stop()
-            if ($null -ne $StageTimes) { $StageTimes['AVIFデコード検証'] += $verifyTimer.Elapsed }
-        }
-        return $convertedPaths.Count
-    }
 
     $running = [System.Collections.Generic.List[object]]::new()
     $gpuVerifyPaths = [System.Collections.Generic.List[string]]::new()
@@ -525,8 +500,7 @@ function Get-AvifSampleEstimate {
         [int]$Quality,
         [int]$Workers,
         [string]$ScratchDir,
-        [string]$VolumeName,
-        [ValidateRange(1,4)][int]$GpuBatchSize = 4
+        [string]$VolumeName
     )
     $convertible = [System.Collections.Generic.List[object]]::new()
     $fullOriginal = [long]0
@@ -570,8 +544,7 @@ function Get-AvifSampleEstimate {
     # 品質ごとに別の作業先へ保存する。本変換終了まで保持する。
     $sampleDir = Join-Path $ScratchDir ('sample_q' + $Quality)
     [void](Invoke-ParallelAvif -Entries $selected -Encoder $Encoder -Decoder $Decoder `
-        -Quality $Quality -Workers $Workers -TempDir $sampleDir -OutputName "$VolumeName / 試算 Q$Quality" `
-        -GpuBatch:$GPU -GpuBatchSize $GpuBatchSize)
+        -Quality $Quality -Workers $Workers -TempDir $sampleDir -OutputName "$VolumeName / 試算 Q$Quality")
     $sampleEncoded = [long]0
     $cache = [System.Collections.Generic.List[object]]::new()
     foreach ($sample in $selected) {
@@ -602,7 +575,6 @@ function Find-AvifQuality {
         [string]$ScratchDir,
         [string]$VolumeName,
         [long]$SampleLimitBytes,
-        [ValidateRange(1,4)][int]$GpuBatchSize = 4,
         [ValidateRange(30, 95)][int]$MaxQuality = 95
     )
     $low = 30
@@ -613,7 +585,7 @@ function Find-AvifQuality {
     for ($iteration = 0; $iteration -lt 5 -and $low -le $high; $iteration++) {
         $candidate = [int][Math]::Floor(($low + $high) / 2)
         $probe = Get-AvifSampleEstimate -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
-            -Quality $candidate -Workers $Workers -ScratchDir $ScratchDir -VolumeName $VolumeName -GpuBatchSize $GpuBatchSize
+            -Quality $candidate -Workers $Workers -ScratchDir $ScratchDir -VolumeName $VolumeName
         $probes.Add($probe)
         Write-Host ('  品質試算 Q{0}: 推定{1:N1} MiB / 内部目標{2:N1} MiB' -f `
             $candidate, ($probe.EstimatedBytes / 1MB), ($SampleLimitBytes / 1MB))
@@ -666,8 +638,7 @@ function Invoke-AutoSizeAvif {
         [string]$OutputName,
         [long]$MaxTargetBytes,
         [long]$SampleSafetyBytes,
-        [System.Collections.IDictionary]$StageTimes,
-        [ValidateRange(1,4)][int]$GpuBatchSize = 4
+        [System.Collections.IDictionary]$StageTimes
     )
     # ZIPヘッダー・中央ディレクトリエントリによる増分も見込む。
     $zipOverheadBytes = [long]0
@@ -682,7 +653,7 @@ function Invoke-AutoSizeAvif {
     try {
         $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
             -Workers $Workers -ScratchDir $ScratchDir -VolumeName $OutputName `
-            -SampleLimitBytes $sampleLimit -GpuBatchSize $GpuBatchSize
+            -SampleLimitBytes $sampleLimit
     }
     finally {
         $qualityTimer.Stop()
@@ -719,7 +690,7 @@ function Invoke-AutoSizeAvif {
         Write-Host "  全ページ変換（$attempt / 最大3回）: 品質$quality / テスト画像再利用 $reusedCount 枚" -ForegroundColor Cyan
         [void](Invoke-ParallelAvif -Entries $trialEntries -Encoder $Encoder -Decoder $Decoder `
             -Quality $quality -Workers $Workers -TempDir $trialDir -OutputName $OutputName `
-            -StageTimes $StageTimes -GpuBatch:$GPU -GpuBatchSize $GpuBatchSize)
+            -StageTimes $StageTimes)
         $actualBytes = [long]0
         foreach ($entry in $trialEntries) { $actualBytes += [long]$entry.Length }
         Write-Host ('  AVIF画像の合計容量: {0:N1} MiB（Q{1}）' -f ($actualBytes / 1MB), $quality)
@@ -919,31 +890,12 @@ function Invoke-MangaBatch {
     Write-Host "`n====== AVIF自動容量調整 ======" -ForegroundColor Cyan
     Write-Host '元ファイルが60MiB以下: 変換なし（CBZならファイルをそのままコピー）'
     Write-Host '60MiB超: 代表12ページ・最大5回試算で68MiBを目安に品質を選択（上限70MiB）'
-    $gpuBatchSize = 4
     if ($GPU) {
+        # Fixed by benchmarking: one image per FFmpeg process, up to twelve.
+        $workers = 12
         Write-Host 'NVENC GPUエンコード: preset p7 / yuv420p' -ForegroundColor Cyan
+        Write-Host 'GPU並列: 12プロセス × 1画像（固定）' -ForegroundColor Cyan
         Write-Host 'GPU変換に失敗した場合、黙ってCPUへ切り替えません。元ファイルは保持します。'
-        Write-Host ''
-        Write-Host '====== GPU並列テスト用プリセット（暫定） ======' -ForegroundColor Cyan
-        Write-Host '  [1] 12プロセス × 1画像'
-        Write-Host '  [2]  6プロセス × 2画像'
-        Write-Host '  [3]  4プロセス × 3画像'
-        Write-Host '  [4]  3プロセス × 4画像（従来のバッチ構成）'
-        Write-Host '  ※品質探索・本変換のエンコードのみ変更。デコード検証は固定です。'
-        while ($true) {
-            $choice = Read-MangaResponse 'GPUプリセット [1-4]（Enterで4）'
-            if ($null -eq $choice) { return }
-            $choice = $choice.Trim()
-            if ($choice -eq '') { $choice = '4' }
-            $preset = Get-GpuBenchmarkPreset -Choice $choice
-            if ($null -ne $preset) {
-                $workers = $preset.ProcessCount
-                $gpuBatchSize = $preset.BatchSize
-                Write-Host ('  選択: {0}プロセス × {1}画像（最大12画像同時投入）' -f $workers, $gpuBatchSize) -ForegroundColor Cyan
-                break
-            }
-            Write-Host '1～4またはEnterを入力してください。' -ForegroundColor Yellow
-        }
     }
     else {
         Write-Host 'AVIFエンコード速度: -s 6（従来どおり） / 元CBZは保持して avif変換cbz へ出力'
@@ -1158,7 +1110,7 @@ function Invoke-MangaBatch {
                     $auto = Invoke-AutoSizeAvif -Entries $entries -Encoder $encoder -Decoder $decoder `
                         -Workers $workers -ScratchDir (Join-Path $workDir 'autotune') `
                         -OutputName $outputName -MaxTargetBytes $MaxTargetBytes `
-                        -SampleSafetyBytes $SampleSafetyBytes -StageTimes $stageTimes -GpuBatchSize $gpuBatchSize
+                        -SampleSafetyBytes $SampleSafetyBytes -StageTimes $stageTimes
                     $entries = $auto.Entries
                     $converted = $auto.Converted
                     $winningQuality = $auto.Quality
