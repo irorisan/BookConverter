@@ -1,5 +1,5 @@
-﻿$ErrorActionPreference = 'Stop'
-if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) { throw 'Requires Windows PowerShell 5.1' }
+$ErrorActionPreference = 'Stop'
+if (-not $IsWindows -or $PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) { throw 'Requires Windows PowerShell 7.6' }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $root 'scripts\Convert-Manga-Input.ps1')
 function Assert-Paths {
@@ -25,9 +25,9 @@ foreach ($invalid in @('"C:\unclosed', '"C:\a"junk', 'relative.cbz', 'C:relative
 }
 foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $root 'scripts') -Filter '*.ps1') + @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1')) {
     $bytes = [IO.File]::ReadAllBytes($file.FullName)
-    if ($bytes[0] -ne 239 -or $bytes[1] -ne 187 -or $bytes[2] -ne 191) { throw "Missing UTF-8 BOM: $file" }
+    [void][Text.UTF8Encoding]::new($false, $true).GetString($bytes)
     $tokens = $null; $errors = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
     if ($errors.Count -gt 0) { throw "Syntax errors in ${file}: $errors" }
 }
-Write-Host 'PASS: literal input parser, PS1 syntax and UTF-8 BOM'
+Write-Host 'PASS: literal input parser, PS1 syntax and strict UTF-8 (BOM optional)'

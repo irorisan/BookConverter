@@ -1,4 +1,4 @@
-"""Actual BAT + Windows PowerShell 5.1; synthetic inputs only, no encoders."""
+"""Actual BAT + Windows PowerShell 7.6; synthetic inputs only, no encoders."""
 from __future__ import annotations
 
 import os
@@ -37,7 +37,7 @@ def output(source: Path, name: str | None = None) -> Path:
 
 def main() -> None:
     if os.name != "nt":
-        raise SystemExit("Requires Windows PowerShell 5.1 and cmd.exe")
+        raise SystemExit("Requires Windows PowerShell 7.6 and cmd.exe")
     with tempfile.TemporaryDirectory(prefix="bookconv-continuous-") as temp:
         folder = Path(temp) / "日本語 空白 & リテラル"
         first = cbz(folder / "まるまる漫画 v01.cbz")

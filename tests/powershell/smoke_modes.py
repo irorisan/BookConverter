@@ -1,4 +1,4 @@
-"""Windows PowerShell 5.1 acceptance tests for explicit manga and magazine BATs."""
+"""Windows PowerShell 7.6 acceptance tests for explicit manga and magazine BATs."""
 from __future__ import annotations
 
 import os
@@ -26,7 +26,7 @@ def run_bat(entry: str, data: str, *paths: Path) -> str:
 
 def main() -> None:
     if os.name != "nt":
-        raise SystemExit("Requires Windows PowerShell 5.1")
+        raise SystemExit("Requires Windows PowerShell 7.6")
     with tempfile.TemporaryDirectory(prefix="bookconv-modes-") as temp:
         folder = Path(temp) / "日本語 空白"
         unnamed_a = cbz(folder / "星の話 外伝.cbz")
