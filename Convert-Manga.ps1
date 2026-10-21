@@ -1,4 +1,5 @@
 ﻿param(
+    [switch]$GPU,
     [switch]$Magazine,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$DroppedPaths
@@ -325,6 +326,8 @@ function Test-AvifOutput {
     finally { $stream.Dispose() }
 }
 
+. (Join-Path $PSScriptRoot 'GPU-Functions.ps1')
+
 function Invoke-ParallelAvif {
     param(
         [Parameter(Mandatory = $true)][System.Collections.Generic.List[object]]$Entries,
@@ -345,6 +348,7 @@ function Invoke-ParallelAvif {
     New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
     $running = [System.Collections.Generic.List[object]]::new()
+    $gpuVerifyPaths = [System.Collections.Generic.List[string]]::new()
     $next = 0
     $finished = 0
     $activity = "AVIF並列変換: $OutputName"
@@ -376,7 +380,12 @@ function Invoke-ParallelAvif {
 
                     $info = New-Object System.Diagnostics.ProcessStartInfo
                     $info.FileName = $Encoder
-                    $info.Arguments = '-q {0} -s 6 -j 1 "{1}" "{2}"' -f $Quality, $avifInput, $destination
+                    if ($GPU) {
+                        $info.Arguments = Get-GpuEncodeArguments -Quality $Quality -InputPath $avifInput -OutputPath $destination
+                    }
+                    else {
+                        $info.Arguments = '-q {0} -s 6 -j 1 "{1}" "{2}"' -f $Quality, $avifInput, $destination
+                    }
                     $info.UseShellExecute = $false
                     $info.CreateNoWindow = $true
                     $process = New-Object System.Diagnostics.Process
@@ -422,6 +431,7 @@ function Invoke-ParallelAvif {
                     throw "avifenc.exeでの変換に失敗しました（終了コード: $code）: $($job.Entry.EntryName)"
                 }
                 Test-AvifOutput -Path $job.Destination
+                if ($GPU) { $gpuVerifyPaths.Add($job.Destination) }
                 $job.Entry.SourcePath = $job.Destination
                 $job.Entry.Length = [long](Get-Item -LiteralPath $job.Destination).Length
                 Remove-Item -LiteralPath $job.Staged -Force
@@ -431,7 +441,7 @@ function Invoke-ParallelAvif {
                 $finished++
                 Write-Progress -Id 2 -ParentId 1 -Activity $activity -Status "$finished / $($pending.Count)枚（並列数 $Workers）" -PercentComplete ([int](100 * $finished / $pending.Count))
             }
-            if (-not $gotResult) { Start-Sleep -Milliseconds 120 }
+            if (-not $gotResult) { Start-Sleep -Milliseconds $(if ($GPU) { 20 } else { 120 }) }
         }
     }
     finally {
@@ -446,6 +456,9 @@ function Invoke-ParallelAvif {
             finally { $job.Process.Dispose() }
         }
         Write-Progress -Id 2 -ParentId 1 -Activity $activity -Completed
+    }
+    if ($GPU) {
+        Invoke-GpuVerifyAvifBatch -Paths $gpuVerifyPaths.ToArray() -FFmpeg $Encoder -Workers ([Math]::Min(8, $Workers))
     }
     return $finished
 }
@@ -857,9 +870,13 @@ function Invoke-MangaBatch {
     Write-Host "`n====== AVIF自動容量調整 ======" -ForegroundColor Cyan
     Write-Host '元ファイルが60MiB以下: 変換なし（CBZならファイルをそのままコピー）'
     Write-Host '60MiB超: 代表12ページ・最大5回試算で68MiBを目安に品質を選択（上限70MiB）'
-    Write-Host 'AVIFエンコード速度: -s 6（従来どおり） / 元CBZは保持して avif変換cbz へ出力'
+    if ($GPU) {
+        Write-Host 'NVENC GPUエンコード: preset p4 / yuv420p / 8並列がデフォルト' -ForegroundColor Cyan
+        Write-Host 'GPU変換に失敗した場合、黙ってCPUへ切り替えません。元ファイルは保持します。'
+    }
+    else { Write-Host 'AVIFエンコード速度: -s 6（従来どおり） / 元CBZは保持して avif変換cbz へ出力' }
     $logicalCores = [Environment]::ProcessorCount
-    $autoWorkers = [int][Math]::Max(1, [Math]::Min(8, [Math]::Floor($logicalCores / 2)))
+    $autoWorkers = if ($GPU) { 8 } else { [int][Math]::Max(1, [Math]::Min(8, [Math]::Floor($logicalCores / 2))) }
     Write-Host "`n====== AVIFの並列処理 ======" -ForegroundColor Cyan
     Write-Host "CPU: $logicalCores 論理コア / 自動設定: $autoWorkers 枚同時"
     while ($true) {
@@ -873,6 +890,10 @@ function Invoke-MangaBatch {
             break
         }
         Write-Host '1～16の整数かEnterを入力してください。' -ForegroundColor Yellow
+    }
+    if ($GPU -and $workers -gt 12) {
+        Write-Warning 'NVENCの同時エンコード数は12に制限します。'
+        $workers = 12
     }
     $encoder = $null
     $decoder = $null
@@ -1010,7 +1031,9 @@ function Invoke-MangaBatch {
             $winningQuality = 0
             if ($shouldCompress) {
                 if (@($entries | Where-Object { $_.NeedsConversion }).Count -gt 0) {
-                    if ($null -eq $encoder) { $encoder = Find-OrInstall-Avifenc }
+                    if ($null -eq $encoder) {
+                        $encoder = if ($GPU) { Find-FFmpegNvenc } else { Find-OrInstall-Avifenc }
+                    }
                     if ($null -eq $decoder -and @($entries | Where-Object {
                         $_.NeedsConversion -and $_.Extension -eq '.webp'
                     }).Count -gt 0) {
@@ -1023,7 +1046,9 @@ function Invoke-MangaBatch {
                     $entries = $auto.Entries
                     $converted = $auto.Converted
                     $winningQuality = $auto.Quality
-                    $formatLabel = "AVIF 品質$winningQuality"
+                    $formatLabel = if ($GPU) {
+                        "NVENC AVIF 品質尺度$winningQuality (CQ$(Convert-GpuQualityToCq -Quality $winningQuality))"
+                    } else { "AVIF 品質$winningQuality" }
                     if (-not $auto.UnderLimit) {
                         Write-Warning ('70MiB以内に収まりませんでした: Q{0} / 約{1:N1} MiB' -f `
                             $winningQuality, ($auto.Bytes / 1MB))
