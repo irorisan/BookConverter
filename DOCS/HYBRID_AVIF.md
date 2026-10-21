@@ -54,18 +54,18 @@ AVIFというコンテナとAV1というコーデックは共通でも、画質�
 
 受け入れテスト: 250ページ、GPU12/CPU4上限・同時稼働・順序・欠損重複、
 GPU失敗→CPU、CPU再試行/失敗、タイムアウト、キャンセル・後片付け、
-実験モードの容量超過拒否。Windows qualityでPS5.1構文とモックを実行。
+実験モードの容量超過拒否。Windows qualityでPowerShell 7.6構文とモックを実行。
 
 ## 検証状況
 
-作業環境はLinux、RTX 5070 Ti / Windows PowerShell 5.1 / avifenc.exe未提供。
+作業環境はLinux、RTX 5070 Ti / PowerShell 7.6（Windows / .NET 10） / avifenc.exe未提供。
 実機のGPU対Hybrid中央値、画質同等性、実AVIF/CBZの70MiB境界、WinRAR E2Eは未検証。
 約41.7秒の参考値は今回の比較基準にしない。速度改善は未確認、既定への採用なし。
 
 実機測定例（新規の結果ディレクトリを指定、入力は60MiB超）:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Benchmark-Hybrid.ps1 -InputPath 'D:\books\test.cbz' -ResultsDirectory 'D:\bench\hybrid-01' -Repeats 3
+pwsh.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Benchmark-Hybrid.ps1 -InputPath 'D:\books\test.cbz' -ResultsDirectory 'D:\bench\hybrid-01' -Repeats 3
 ```
 
 WebPのdwebp展開も同じ枠の子プロセスとして実行し、親の配布ループをブロックしない。

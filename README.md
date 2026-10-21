@@ -4,7 +4,7 @@ Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-M
 
 ## プロジェクトについて
 
-- **実装はWindows PowerShell 5.1とBAT**。Tauri/Rustへの移行は行いません。
+- **実装はPowerShell 7.6（Windows / .NET 10）とBAT**。Tauri/Rustへの移行は行いません。
 - CUIには全巻の進捗、現在工程、AVIFエンコード枚数と終了集計、**変換所要時間（HH:MM:SS.1桁）**を表示します。さらに、各巻の終了時に入力準備・展開・品質探索・本変換・AVIF検証・CBZ作成/検証などの**工程別所要時間**を表示します。時間はシリーズ名・CPU版の並列数入力後から完了集計まで（解凍・品質探索・CBZ保存・検証を含む）を測定します。変換後は同じCUIで次の作品のパス入力を待ち、`q` / `exit` で終了します。
 - GitHubには第三者の `avifenc.exe` バイナリを含めていません。必要な場合は従来の自動取得、または `tools\avifenc.exe` への配置を利用してください。
 - 開発計画は [DOCS/DEVELOPMENT_PLAN.md](DOCS/DEVELOPMENT_PLAN.md) を参照してください。
@@ -177,7 +177,7 @@ ONE PIECE/
 
 ## 必要なもの
 
-- Windows PowerShell 5.1（Windows標準）
+- PowerShell 7.6.x（Windows版、`pwsh.exe` をPATHへ登録）。Windows標準の5.1は対象外。インストール・移行・検証範囲は [PowerShell 7.6移行仕様](DOCS/POWERSHELL_7_6.md) を参照。
 - WinRAR（ZIP / CBZ / RARを展開する場合。60MiB以下のCBZ原本コピー・EPUB・フォルダ入力では不要）
 - AOMedia公式 `avifenc.exe`：最初のAVIF変換時に公式リリースから自動取得。自動取得できない場合は `tools\avifenc.exe` に配置。
 - Google公式 `dwebp.exe`：元CBZにWebP画像がある場合だけ必要。自動取得が失敗した場合は `tools\dwebp.exe` に配置。
@@ -188,7 +188,7 @@ ONE PIECE/
 
 - JPEGやWebP→AVIFは**非可逆の再エンコード**です。画質が改善するわけではありません。Kavita・Mihonでの表紙とページ表示、細い文字・トーンを最初の1巻で確認してください。
 - 数値表記は「MiB」（1MiB = 1,048,576バイト）です。Windowsのファイル容量表示に近い単位です。
-- **WinRAR・avifenc・dwebpを使うWindows実機E2Eは未検証**です。CIではPowerShell 5.1のBAT連続変換・小型CBZのSHA-256・EPUB/spine・自然順・命名・容量境界を検証します。実機ドロップも未確認です。[実機の確認手順](DOCS/PHASE3_4_CONTINUOUS.md) に従い、初めに少数ページ・1巻で確認してください。
+- **WinRAR・avifenc・dwebpを使うWindows実機E2Eは未検証**です。CIではPowerShell 7.6のBAT連続変換・小型CBZのSHA-256・EPUB/spine・自然順・命名・容量境界を検証します。実機ドロップも未確認です。[実機の確認手順](DOCS/PHASE3_4_CONTINUOUS.md) に従い、初めに少数ページ・1巻で確認してください。
 GPU12＋CPU4の実験は [設計・測定手順](DOCS/HYBRID_AVIF.md) を参照。
 `Convert-Manga-Hybrid.bat`（漫画）または `scripts/Convert-Manga.ps1 -ConversionMode Hybrid`
 で明示起動する。比較用は `-ConversionMode GPU`。既存BATの既定動作は変わらない。

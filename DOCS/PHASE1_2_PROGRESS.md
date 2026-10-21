@@ -1,6 +1,6 @@
 # Phase 1 + Phase 2 — PowerShellコード登録とCUI進捗改善
 
-> 2026-10-21 / 対象: Windows PowerShell 5.1。開発規約: [AGENTS.md](../AGENTS.md)。主計画: [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)。
+> 2026-10-21 / 対象: PowerShell 7.6（Windows / .NET 10）。開発規約: [AGENTS.md](../AGENTS.md)。主計画: [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)。
 
 ## 目的とスコープ
 
@@ -19,7 +19,7 @@
 
 ## テスト設計（Docs First → Red → Green）
 
-- Windows CIでPowerShell 5.1のASTパーサーを使ってPS1構文エラーを検出、BAT/READMEの存在を確認。
+- Windows CIでPowerShell 7.6のASTパーサーを使ってPS1構文エラーを検出、BAT/READMEの存在を確認。
 - 進捗率の0件・中間・全件・範囲外の丸め、`Write-Progress` のID1と子ID2、完了通知をテスト。
 - 工程ログが巻名と現在工程を表示することをテスト。
 - 合成小型CBZをPowerShellで変換し、60MiB以下のCBZが**SHA-256同一**でコピーされること、原本不変とサマリーを確認（WinRAR/AVIFエンコーダー不要経路）。
@@ -28,7 +28,7 @@
 ## 受け入れ条件
 
 - [x] 原版のPowerShell/BAT/READMEを第三者バイナリを除いて管理する（進捗表示用PS1も追加）。
-- [x] WindowsでPowerShell 5.1構文チェック・進捗ユニットテスト・小型CBZスモークが成功する。
+- [x] WindowsでPowerShell 7.6構文チェック・進捗ユニットテスト・小型CBZスモークが成功する。
 - [x] 全体進捗・工程ログ・AVIF画像の子進捗・終了集計をコードに接続した。全体進捗とコピー工程は小型CBZスモークで確認。
 - [ ] 大容量AVIF・EPUB・RARなどのWindows実データ変換とインタラクティブな進捗描画を検証する（CI対象外）。
 - [ ] 全入力形式で容量判定・品質探索・命名・ページ順・原本保護が不変であることを実機確認する。
