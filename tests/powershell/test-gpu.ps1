@@ -231,5 +231,25 @@ finally {
     Remove-Item -LiteralPath $encodeTemp -Recurse -Force -ErrorAction SilentlyContinue
 }
 Write-Host 'GPU encoding groups: separate AVIF outputs, 9 pages in 3 processes, failure propagation: OK'
+# Phase 2: the nearest untried NVENC CQ in the current binary-search window.
+$usedCq = @(Convert-GpuQualityToCq -Quality 62)
+$distinct = Get-GpuDistinctQualityCandidate -Low 30 -High 95 -UsedCqs $usedCq
+if ($distinct -lt 30 -or $distinct -gt 95 -or
+    (Convert-GpuQualityToCq -Quality $distinct) -in $usedCq) {
+    throw 'GPU quality search must skip previously encoded CQ values'
+}
+$exhausted = Get-GpuDistinctQualityCandidate -Low 30 -High 32 -UsedCqs @(50,49)
+if ($null -ne $exhausted) { throw 'CQ-exhausted search interval must return no candidate' }
+
+$mainCode = Get-Content -LiteralPath (Join-Path $repo 'scripts\Convert-Manga.ps1') -Raw -Encoding UTF8
+$sampleStart = $mainCode.IndexOf('function Get-AvifSampleEstimate')
+$sampleEnd = $mainCode.IndexOf('function Find-AvifQuality')
+if ($sampleStart -lt 0 -or $sampleEnd -le $sampleStart) { throw 'Missing sample quality search function' }
+$sampleImplementation = $mainCode.Substring($sampleStart,$sampleEnd-$sampleStart)
+if (-not $sampleImplementation.Contains('-GpuBatch:$GPU')) {
+    throw 'GPU quality samples must use the same multi-output batch encoder'
+}
+Write-Host 'GPU sample search: distinct NVENC CQ, shared batch encoding path: OK'
+
 
 Write-Host 'GPU quality mapping, command arguments, PowerShell syntax and BATs: OK'
