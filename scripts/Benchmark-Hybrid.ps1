@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$InputPath,
     [Parameter(Mandatory=$true)][string]$ResultsDirectory,
-    [ValidateRange(3,20)][int]$Repeats=3
+    [ValidateRange(3,20)][int]$Repeats=3,
+    [ValidateRange(0,8)][int]$CpuProbeWorkers=4
 )
 $ErrorActionPreference='Stop'
 if (-not $IsWindows -or $PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) {
@@ -24,7 +25,7 @@ if (-not (Test-Path -LiteralPath $avifenc)) {
     $cmd=Get-Command avifenc.exe -ErrorAction Stop
     $avifenc=$cmd.Source
 }
-$metadata=[ordered]@{Input=$source.FullName; SHA256=$hash; Repeats=$Repeats;
+$metadata=[ordered]@{Input=$source.FullName; SHA256=$hash; Repeats=$Repeats; CpuProbeWorkers=$CpuProbeWorkers;
     PowerShell=$PSVersionTable.PSVersion.ToString(); FFmpeg=$ffmpeg; Avifenc=$avifenc;
     FFmpegVersion=(& $ffmpeg -version 2>&1 | Out-String);
     AvifencVersion=(& $avifenc --version 2>&1 | Out-String);
@@ -45,7 +46,7 @@ for ($round=1; $round -le $Repeats; $round++) {
         # EOF ends the normal continuous-input loop after one volume.
         $psi=New-Object Diagnostics.ProcessStartInfo
         $psi.FileName=Join-Path $PSHOME 'pwsh.exe'
-        $psi.Arguments='-NoLogo -NoProfile -ExecutionPolicy Bypass -File "{0}" -Magazine -ConversionMode {1} -GpuWorkers 12 -CpuWorkers 4 -ReportDirectory "{2}" "{3}"' -f $scriptPath,$mode,$metrics,$copy
+        $psi.Arguments='-NoLogo -NoProfile -ExecutionPolicy Bypass -File "{0}" -Magazine -ConversionMode {1} -GpuWorkers 12 -CpuWorkers 4 -CpuProbeWorkers {2} -ReportDirectory "{3}" "{4}"' -f $scriptPath,$mode,$CpuProbeWorkers,$metrics,$copy
         $psi.UseShellExecute=$false; $psi.RedirectStandardInput=$true
         $p=New-Object Diagnostics.Process; $p.StartInfo=$psi
         try {
@@ -58,7 +59,8 @@ for ($round=1; $round -le $Repeats; $round++) {
         if ($report.Status -ne 'Success' -or $report.FinalBytes -gt 70MB) { throw 'Invalid or oversized benchmark result' }
         if (@($report.Passes | Where-Object { $_.Errors -gt 0 }).Count) { throw 'Fallback/retry run cannot be a clean performance comparison' }
         $rows.Add([pscustomobject]@{Round=$round; Mode=$mode; Seconds=$report.TotalSeconds;
-            Bytes=$report.FinalBytes; GpuQuality=$report.GpuQuality; CpuQuality=$report.CpuQuality})
+            Bytes=$report.FinalBytes; GpuQuality=$report.GpuQuality; CpuQuality=$report.CpuQuality;
+            CpuProbeWorkers=$report.CpuProbeWorkers; ProbeSeconds=$report.Stages.'品質探索'})
         $rows | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $ResultsDirectory 'runs.json') -Encoding UTF8
         # Keep all final CBZs and reports reviewable; remove only the benchmark's input copy.
         Remove-Item -LiteralPath $copy
