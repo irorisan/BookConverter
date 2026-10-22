@@ -134,6 +134,10 @@ jobs:
         shell: pwsh
         run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-concurrent-quality.ps1
 
+      - name: Validate MangaSplit Windows Terminal launch and dropped folder paths
+        shell: pwsh
+        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-manga-split-launch.ps1
+
       - name: Validate MangaSplit cover crop, page order and non-destructive output
         shell: pwsh
         run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-manga-split.ps1
