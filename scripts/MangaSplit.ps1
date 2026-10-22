@@ -1,6 +1,6 @@
 #requires -Version 7.6
 <#
-MangaSplit: 001 -> centered cover; subsequent images -> right/left pages.
+MangaSplit: first image -> centered cover; subsequent images -> right/left pages.
 Sources are never modified. Output is a new sibling _裁断.cbz.
 #>
 param(
@@ -156,12 +156,11 @@ function Process-Manga([string]$path){
                 $_.FullName -notmatch '[\\/]__MACOSX[\\/]'
             } | Sort-Object @{Expression={Get-NaturalKey $_.FullName}})
         if($images.Count -eq 0){throw 'No JPG/JPEG/PNG images found.'}
-        $covers=@($images | Where-Object BaseName -eq '001')
-        if($covers.Count -ne 1){
-            throw "Exactly one 001.jpg/jpeg/png is needed; found $($covers.Count)."
-        }
-        $cover=$covers[0]
-        $spreads=@($images | Where-Object FullName -ne $cover.FullName)
+        # Image names are not standardized: the first page in natural order
+        # is the cover, whether called 001, 01, 0001 or title-prefixed.
+        $cover=$images[0]
+        $spreads=@($images | Select-Object -Skip 1)
+        Write-Host ("Cover (first image): {0}" -f $cover.Name)
         Write-Host ('Images: {0}, output pages: {1}' -f $images.Count,(1+2*$spreads.Count))
         $index=1
         foreach($file in @($cover)+$spreads){
