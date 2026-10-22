@@ -1,7 +1,7 @@
 #requires -Version 7.6
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet('Manga','Magazine')]
+    [ValidateSet('Manga','Magazine','Split')]
     [string]$Mode,
     [Parameter(Position=0,ValueFromRemainingArguments=$true)]
     [string[]]$DroppedPaths
@@ -16,9 +16,10 @@ try {
     if($null -eq $terminal){
         throw 'Windows Terminal（wt.exe）が見つかりません。Windows Terminalをインストールし、Windowsの設定でwt.exeのアプリ実行エイリアスを有効にしてください。'
     }
-    $main=Join-Path $PSScriptRoot 'Convert-Manga.ps1'
+    $scriptFile=if($Mode -eq 'Split'){'MangaSplit.ps1'}else{'Convert-Manga.ps1'}
+    $main=Join-Path $PSScriptRoot $scriptFile
     if(-not (Test-Path -LiteralPath $main -PathType Leaf)){
-        throw "変換スクリプトがありません: $main"
+        throw "実行スクリプトがありません: $main"
     }
     . (Join-Path $PSScriptRoot 'BookConverter-TerminalLaunch.ps1')
 

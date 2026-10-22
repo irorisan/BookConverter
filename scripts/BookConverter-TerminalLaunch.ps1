@@ -10,7 +10,7 @@ function New-BookConverterTerminalLaunch {
     param(
         [Parameter(Mandatory=$true)][string]$MainScript,
         [Parameter(Mandatory=$true)][string]$PowerShellPath,
-        [Parameter(Mandatory=$true)][ValidateSet('Manga','Magazine')][string]$Mode,
+        [Parameter(Mandatory=$true)][ValidateSet('Manga','Magazine','Split')][string]$Mode,
         [string[]]$DroppedPaths=@()
     )
     $modeArguments=if($Mode -eq 'Magazine'){'-Magazine'}else{''}
@@ -22,12 +22,15 @@ function New-BookConverterTerminalLaunch {
     $pathsExpression='@('+($pathLiterals -join ', ')+')'
     $mainLiteral=ConvertTo-BookConverterPowerShellLiteral -Value $MainScript
     $rootLiteral=ConvertTo-BookConverterPowerShellLiteral -Value (Split-Path -Path $MainScript -Parent)
-    $source="Set-Location -LiteralPath $rootLiteral; & $mainLiteral $modeArguments -DroppedPaths $pathsExpression"
+    $callArguments=if($Mode -eq 'Split'){"-Inputs $pathsExpression"}else{"$modeArguments -DroppedPaths $pathsExpression"}
+    $source="Set-Location -LiteralPath $rootLiteral; & $mainLiteral $callArguments"
     # PowerShell -EncodedCommand expects UTF-16LE, even on UTF-8 consoles.
     $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($source))
     $args=@('-w','new','new-tab','--title',("BookConverter / "+$Mode),
-        $PowerShellPath,'-NoLogo','-NoProfile','-ExecutionPolicy','Bypass',
-        '-EncodedCommand',$encoded)
+        $PowerShellPath,'-NoLogo','-NoProfile')
+    # An explicit exit/exception during a split must not hide diagnostics.
+    if($Mode -eq 'Split'){$args+= '-NoExit'}
+    $args+=@('-ExecutionPolicy','Bypass','-EncodedCommand',$encoded)
     return [pscustomobject]@{
         FileName='wt.exe'
         Arguments=$args

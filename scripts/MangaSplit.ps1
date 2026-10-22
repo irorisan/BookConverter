@@ -208,8 +208,7 @@ function Process-Manga([string]$path){
 }
 
 if(-not $Inputs -or $Inputs.Count -eq 0){
-    Write-Host 'Drag folders, ZIP, CBZ, or RAR files onto MangaSplit.bat.'
-    exit 1
+    throw 'Drop folders, ZIP, CBZ or RAR files onto MangaSplit.bat.'
 }
 $failed=0
 foreach($path in $Inputs){
@@ -221,5 +220,4 @@ foreach($path in $Inputs){
     }
 }
 Write-Host ("`nResult: {0} succeeded, {1} failed" -f ($Inputs.Count-$failed),$failed)
-if($failed -ne 0){exit 1}
-exit 0
+if($failed -ne 0){throw ("MangaSplit: {0} input(s) failed. See errors above." -f $failed)}
