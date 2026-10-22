@@ -49,7 +49,7 @@ def main() -> None:
         first2 = cbz(folder / "まるまる漫画 v02.cbz")
         second = cbz(folder / "さんかく漫画（３）.cbz")
         originals = {p: sha256(p) for p in (first, first2, second)}
-        text = run(f'\n1\n"{second}"\n\n2\nq\n', first, first2)
+        text = run(f'\n"{second}"\n\nq\n', first, first2)
         assert '成功: 2 / 上限超過: 0 / スキップ: 0 / 失敗: 0' in text, text
         assert '成功: 1 / 上限超過: 0 / スキップ: 0 / 失敗: 0' in text, text
         assert '[1/2] まるまる漫画 v01.cbz' in text, text
@@ -73,7 +73,7 @@ def main() -> None:
         good = cbz(folder / '回復作品 v07.cbz')
         fresh = cbz(folder / '再開作品 v01.cbz')
         originals.update({p: sha256(p) for p in (broken, good, fresh, unsupported)})
-        text = run(f'"{broken}" "{good}"\n混在作品\n1\n"{fresh}"\n\n\nq\n')
+        text = run(f'"{broken}" "{good}"\n混在作品\n"{fresh}"\n\nq\n')
         assert '成功: 1 / 上限超過: 0 / スキップ: 0 / 失敗: 1' in text, text
         assert '成功: 1 / 上限超過: 0 / スキップ: 0 / 失敗: 0' in text, text
         assert '[1/1] 再開作品 v01.cbz' in text, text
