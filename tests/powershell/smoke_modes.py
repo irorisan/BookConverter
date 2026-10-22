@@ -84,7 +84,7 @@ def main() -> None:
         ]
         tagged = [(cbz(folder / name), expected) for name, expected in tagged_cases]
         before = {p: sha256(p) for p, _ in tagged}
-        text = run_bat("Convert-Manga.bat", "統一名\\n\\nq\\n", *(p for p, _ in tagged))
+        text = run_bat("Convert-Manga.bat", "統一名\n\nq\n", *(p for p, _ in tagged))
         assert "成功: 6 / 上限超過: 0 / スキップ: 0 / 失敗: 0" in text, text
         for source, expected in tagged:
             assert sha256(out / expected) == before[source], (source, expected, text)
@@ -95,20 +95,20 @@ def main() -> None:
         split_a = cbz(folder / "TagStory v12A.cbz")
         split_b = cbz(folder / "TagStory v12B.cbz")
         unchanged = {p: sha256(p) for p in (split_a, split_b)}
-        text = run_bat("Convert-Manga.bat", "統一名\\n\\nq\\n", split_a, split_b)
+        text = run_bat("Convert-Manga.bat", "統一名\n\nq\n", split_a, split_b)
         assert "成功: 1 / 上限超過: 0 / スキップ: 1 / 失敗: 0" in text, text
         assert (out / "統一名 v12.cbz").is_file(), text
         assert all(sha256(p) == old for p, old in unchanged.items())
 
         # Embedded site-looking text is part of the title, not a trailing tag.
         embedded = cbz(folder / "DL-Raw.Se実験 v13.cbz")
-        text = run_bat("Convert-Manga.bat", "\\n\\nq\\n", embedded)
+        text = run_bat("Convert-Manga.bat", "\n\nq\n", embedded)
         assert (out / "DL-Raw.Se実験 v13.cbz").is_file(), text
 
         # The magazine BAT is unchanged even for tag- and suffix-like filenames.
         magazine_tag = cbz(folder / "月刊誌 v14A [DL-Raw.Se].cbz")
         digest = sha256(magazine_tag)
-        text = run_bat("Convert-Manga-Magazine.bat", "\\nq\\n", magazine_tag)
+        text = run_bat("Convert-Manga-Magazine.bat", "\nq\n", magazine_tag)
         assert "シリーズの出力作品名" not in text, text
         assert sha256(out / magazine_tag.name) == digest
 
