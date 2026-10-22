@@ -1,4 +1,7 @@
-"""Windows PowerShell 7.6 acceptance tests for explicit manga and magazine BATs."""
+"""Windows PowerShell 7.6 acceptance tests for manga/magazine engine modes.
+
+BAT dispatch through WT is checked separately in test-terminal-launch.ps1.
+"""
 from __future__ import annotations
 
 import os
@@ -14,7 +17,9 @@ def run_bat(entry: str, data: str, *paths: Path) -> str:
     with tempfile.TemporaryDirectory(prefix="bookconv-modes-work-") as temp:
         env = dict(os.environ, TEMP=temp, TMP=temp)
         result = subprocess.run(
-            ["cmd.exe", "/d", "/c", str(ROOT / entry), *map(str, paths)],
+            ["pwsh.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", str(ROOT / "scripts" / "Convert-Manga.ps1"),
+             *(["-Magazine"] if "Magazine" in entry else []), *map(str, paths)],
             input=data, capture_output=True, text=True, encoding="utf-8",
             errors="strict", timeout=120, check=False, env=env,
         )
@@ -95,7 +100,7 @@ def main() -> None:
         assert sha256(out / weekly.name) == originals[weekly]
         assert all(sha256(p) == digest for p, digest in originals.items())
         assert not list(folder.rglob(".manga_*.tmp"))
-    print("PASS: separate BAT modes, underscore volume suffix, batches and original hashes")
+    print("PASS: separate manga/magazine modes, underscore volume suffix, batches and original hashes")
 
 
 if __name__ == "__main__":

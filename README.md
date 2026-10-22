@@ -1,6 +1,6 @@
 # BookConverter — 漫画と雑誌の専用BAT・AVIF/CBZ変換
 
-Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-Manga.bat`、雑誌・単巻は `Convert-Manga-Magazine.bat`** にフォルダ / ZIP / CBZ / RAR / EPUBをドラッグ＆ドロップします。元データは削除せず、入力元の親に **`avif変換cbz`** を作成して結果を保存します。
+Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-Manga.bat`、雑誌・単巻は `Convert-Manga-Magazine.bat`** にフォルダ / ZIP / CBZ / RAR / EPUBをドラッグ＆ドロップします。 **変換BATを実行するとWindows Terminalの新しいウィンドウでPowerShell 7.6が開きます。** Windows Terminal（`wt.exe`エイリアス）と`pwsh.exe`が必要で、Windows Terminalが見つからない場合は起動を中止して案内します。BAT起動時のCMDウィンドウは一瞬表示されることがあります。複数ファイル・日本語パスも同じ操作で投入でき、従来の漫画/雑誌/CPU/GPU/Hybridのモード設定は維持します。アップデーターBATは変更しません。元データは削除せず、入力元の親に **`avif変換cbz`** を作成して結果を保存します。
 
 ## プロジェクトについて
 

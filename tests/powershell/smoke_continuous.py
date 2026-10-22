@@ -1,4 +1,7 @@
-"""Actual BAT + Windows PowerShell 7.6; synthetic inputs only, no encoders."""
+"""Windows PowerShell 7.6 conversion-engine smoke with synthetic CBZ inputs.
+
+Terminal BAT dispatch is separately covered by test-terminal-launch.ps1.
+"""
 from __future__ import annotations
 
 import os
@@ -22,7 +25,9 @@ def run(lines: str, *args: Path, expected: int = 0, magazine: bool = False) -> s
     with tempfile.TemporaryDirectory(prefix="bookconv-work-") as work:
         env = dict(os.environ, TEMP=work, TMP=work)
         result = subprocess.run(
-            ["cmd.exe", "/d", "/c", str(ROOT / ("Convert-Manga-Magazine.bat" if magazine else "Convert-Manga.bat")), *map(str, args)],
+            ["pwsh.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", str(ROOT / "scripts" / "Convert-Manga.ps1"),
+             *(["-Magazine"] if magazine else []), *map(str, args)],
             input=lines, capture_output=True, text=True, encoding="utf-8",
             errors="strict", timeout=120, check=False, env=env,
         )
@@ -37,7 +42,7 @@ def output(source: Path, name: str | None = None) -> Path:
 
 def main() -> None:
     if os.name != "nt":
-        raise SystemExit("Requires Windows PowerShell 7.6 and cmd.exe")
+        raise SystemExit("Requires Windows PowerShell 7.6")
     with tempfile.TemporaryDirectory(prefix="bookconv-continuous-") as temp:
         folder = Path(temp) / "日本語 空白 & リテラル"
         first = cbz(folder / "まるまる漫画 v01.cbz")
@@ -90,7 +95,7 @@ def main() -> None:
         run('q\n')
         run('exit\n')
         run('')  # EOF must not spin forever.
-        print('PASS: real BAT, two series, reset, invalid input, recovery, skip, hashes, q/exit/EOF')
+        print('PASS: PowerShell core, two series, reset, invalid input, recovery, skip, hashes, q/exit/EOF')
 
 
 if __name__ == '__main__':
