@@ -349,6 +349,36 @@ function Test-AvifOutput {
 . (Join-Path $PSScriptRoot 'Hybrid-QualityParallel.ps1')
 . (Join-Path $PSScriptRoot 'Hybrid-GpuLed.ps1')
 
+# Persist only the newly generated AVIFs that failed individual decode verification.
+# Source pages and existing outputs are never moved or overwritten.
+function Save-AvifDecodeEvidence {
+    param(
+        [Parameter(Mandatory=$true)][object[]]$Entries,
+        [Parameter(Mandatory=$true)][object[]]$OriginalEntries,
+        [Parameter(Mandatory=$true)][string[]]$FailedPaths,
+        [Parameter(Mandatory=$true)][string]$MetricsDirectory
+    )
+    $folder=Join-Path $MetricsDirectory ('avif_decode_failure_' + [Guid]::NewGuid().ToString('N'))
+    [void](New-Item -ItemType Directory -Path $folder -Force)
+    $manifest=[System.Collections.Generic.List[object]]::new()
+    for ($i=0; $i -lt $Entries.Count; $i++) {
+        $entry=$Entries[$i]
+        if ($FailedPaths -notcontains [string]$entry.SourcePath) { continue }
+        $fileName=('page_{0:D6}.avif' -f $i)
+        Copy-Item -LiteralPath $entry.SourcePath -Destination (Join-Path $folder $fileName) -ErrorAction Stop
+        $manifest.Add([pscustomobject]@{
+            Index=$i
+            EntryName=[string]$entry.EntryName
+            EncodedBy=[string]$entry.EncodedBy
+            OriginalPath=[string]$OriginalEntries[$i].SourcePath
+            FailedAvifPath=[string]$entry.SourcePath
+            EvidenceFile=$fileName
+        })
+    }
+    $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $folder 'manifest.json') -Encoding UTF8
+    return $folder
+}
+
 function Invoke-ParallelAvif {
     param(
         [Parameter(Mandatory = $true)][System.Collections.Generic.List[object]]$Entries,
@@ -1045,6 +1075,7 @@ function Invoke-MangaBatch {
             $winningQuality = 0
             if ($shouldCompress) {
                 if (@($entries | Where-Object { $_.NeedsConversion }).Count -gt 0) {
+                    $originalEntries = Copy-VolumeEntries -Entries $entries
                     if ($null -eq $encoder) {
                         $encoder = Find-FFmpegNvenc
                         $script:CpuEncoder = Find-OrInstall-Avifenc
@@ -1084,7 +1115,36 @@ function Invoke-MangaBatch {
                     if ($samples.Count -gt 0) {
                         if (-not $encoder) { $encoder=Find-FFmpegNvenc }
                         Write-Host ('  AVIFサンプル検証: {0}/{1} 枚' -f $samples.Count,$avifs.Count) -ForegroundColor DarkCyan
-                        Invoke-GpuVerifyAvifBatch -Paths $samples -FFmpeg $encoder -Workers 2 -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
+                        $failedAvifs=[string[]]@(Invoke-GpuVerifyAvifBatch -Paths $samples -FFmpeg $encoder -Workers 2 `
+                            -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds -ReturnFailedPaths)
+                        if ($failedAvifs.Count -gt 0) {
+                            # Save the failing encoded files before the temporary workspace is cleaned.
+                            $metricsDir=if ($ReportDirectory) { $ReportDirectory } else { Join-Path $destinationDir 'metrics' }
+                            $evidence=Save-AvifDecodeEvidence -Entries $entries.ToArray() `
+                                -OriginalEntries $originalEntries.ToArray() -FailedPaths $failedAvifs -MetricsDirectory $metricsDir
+                            Write-Warning ("AVIF単体検証で{0}枚失敗。診断ファイル: {1}" -f $failedAvifs.Count,$evidence)
+                            $plan=@(Get-AvifCpuRecoveryPlan -Entries $entries.ToArray() `
+                                -OriginalEntries $originalEntries.ToArray() -FailedPaths $failedAvifs)
+                            $cpuEntries=[System.Collections.Generic.List[object]]::new()
+                            foreach ($itemToRetry in $plan) { $cpuEntries.Add($itemToRetry.Entry) }
+                            Write-Warning ("元画像からCPU (avifenc q{0}) で該当{1}枚のみ再変換します。" -f $script:HybridCpuQuality,$cpuEntries.Count)
+                            [void](Invoke-ParallelAvif -Entries $cpuEntries -Encoder $encoder -Decoder $decoder `
+                                -Quality $script:HybridCpuQuality -Workers $CpuWorkers `
+                                -TempDir (Join-Path $workDir 'cpu_decode_recovery') -OutputName $outputName `
+                                -StageTimes $stageTimes -CpuProbe)
+                            $cpuPaths=[string[]]@($cpuEntries | ForEach-Object { [string]$_.SourcePath })
+                            # Refuse to commit if CPU outputs are also undecodable.
+                            Invoke-GpuVerifyAvifBatch -Paths $cpuPaths -FFmpeg $encoder -Workers 2 `
+                                -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
+                            for ($i=0; $i -lt $plan.Count; $i++) {
+                                $target=$entries[[int]$plan[$i].Index]
+                                $target.SourcePath=$cpuEntries[$i].SourcePath
+                                $target.Length=[long]$cpuEntries[$i].Length
+                                $target.EncodedBy='Cpu'
+                            }
+                            $formatLabel += (" / CPU回復{0}枚" -f $plan.Count)
+                            Write-Host ("  CPU回復成功: {0}枚（変更済みページのみ差し替え）" -f $plan.Count) -ForegroundColor Green
+                        }
                     }
                 } finally { $verifyTimer.Stop(); $stageTimes['AVIFデコード検証'] += $verifyTimer.Elapsed }
             Write-MangaStage -Name $outputName -Stage "CBZ書き込み"
