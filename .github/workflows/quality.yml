@@ -98,7 +98,7 @@ jobs:
         shell: pwsh
         run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-gpu.ps1
 
-      - name: Verify batch AVIF decode isolation and selective recovery
+      - name: Verify CPU libavif decode and selective recovery
         shell: pwsh
         run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-avif-decode-recovery.ps1
 
