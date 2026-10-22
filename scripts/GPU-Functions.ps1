@@ -64,198 +64,92 @@ function Select-AvifVerificationSamples {
     return $paths.ToArray()
 }
 
-# Decode every SELECTED AVIF (independent inputs and mapped streams) in a single
-# FFmpeg process per bounded batch. Do not use stream copy: it bypasses decoding.
-function Get-GpuVerifyArguments {
-    param([Parameter(Mandatory=$true)][ValidateCount(1,8)][string[]]$Paths)
-    $parts = [System.Collections.Generic.List[string]]::new()
-    $parts.Add('-hide_banner -loglevel error -nostdin -xerror -max_error_rate 0')
-    foreach ($path in $Paths) {
-        if ($path.Contains('"')) { throw "AVIF検証パスに引用符が含まれています: $path" }
-        $parts.Add(('-i "{0}"' -f $path))
-    }
-    for ($i = 0; $i -lt $Paths.Count; $i++) {
-        $parts.Add(('-map {0}:v:0' -f $i))
-    }
-    $parts.Add('-f null NUL')
-    return ($parts -join ' ')
-}
-
-# A multi-stream failure alone does not prove any particular AVIF is broken.
-# Run a bounded, independent one-file decode for each member of the failed batch.
-function Invoke-FFmpegSingleAvifProbe {
+# CPU-only libavif decoding validates the sampled AVIFs independently of
+# FFmpeg's AVIF decoder. Full PNG output is required, not just an AVIF header.
+function Get-AvifDecodeArguments {
     param(
-        [Parameter(Mandatory=$true)][string]$Path,
-        [Parameter(Mandatory=$true)][string]$FFmpeg,
-        [string]$CancelFile,
-        [int]$TimeoutSeconds=0
+        [Parameter(Mandatory=$true)][string]$InputPath,
+        [Parameter(Mandatory=$true)][string]$OutputPath
     )
-    $process=[Diagnostics.Process]::new()
-    $started=$false
-    $clock=[Diagnostics.Stopwatch]::StartNew()
-    try {
-        $process.StartInfo.FileName=$FFmpeg
-        $process.StartInfo.Arguments=Get-GpuVerifyArguments -Paths ([string[]]@($Path))
-        $process.StartInfo.UseShellExecute=$false
-        $process.StartInfo.CreateNoWindow=$true
-        if (-not $process.Start()) { throw "AVIF単体検証プロセスを起動できません: $Path" }
-        $started=$true
-        while (-not $process.WaitForExit(20)) {
-            if ($CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'AVIF verification cancelled' }
-            if ($TimeoutSeconds -gt 0 -and $clock.Elapsed.TotalSeconds -gt $TimeoutSeconds) {
-                throw 'AVIF verification timed out'
-            }
-        }
-        return [int]$process.ExitCode
+    foreach ($path in @($InputPath,$OutputPath)) {
+        if ($path.Contains('"')) { throw "Invalid AVIF verification path: $path" }
     }
-    finally {
-        if ($started -and -not $process.HasExited) {
-            try { $process.Kill(); $process.WaitForExit() } catch { }
-        }
-        $process.Dispose()
-        $clock.Stop()
-    }
+    return ('"{0}" "{1}"' -f $InputPath,$OutputPath)
 }
 
-function Invoke-GpuVerifyAvifBatch {
+function Test-DecodedPng {
+    param([Parameter(Mandatory=$true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    $stream=[IO.File]::OpenRead($Path)
+    try {
+        if ($stream.Length -lt 8) { return $false }
+        $header=[byte[]]::new(8)
+        [void]$stream.Read($header,0,8)
+        return ([Convert]::ToHexString($header) -ceq '89504E470D0A1A0A')
+    }
+    finally { $stream.Dispose() }
+}
+
+function Invoke-CpuVerifyAvifSamples {
     param(
         [string[]]$Paths,
-        [Parameter(Mandatory=$true)][string]$FFmpeg,
-        [ValidateRange(1,12)][int]$Workers = 8,
+        [Parameter(Mandatory=$true)][string]$Avifdec,
+        [Parameter(Mandatory=$true)][string]$ScratchDir,
         [string]$CancelFile,
-        [ValidateRange(0,86400)][int]$TimeoutSeconds=0,
+        [ValidateRange(1,86400)][int]$TimeoutSeconds=300,
         [switch]$ReturnFailedPaths
     )
     if (-not $Paths -or $Paths.Count -eq 0) { return }
+    if (-not (Test-Path -LiteralPath $Avifdec -PathType Leaf)) {
+        throw "CPU AVIFデコーダーが見つかりません: $Avifdec"
+    }
 
-    $batchSize=8
-    $processLimit=[Math]::Min(2,$Workers)
-    $avifdec=Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\avifdec.exe'
-    $hasAvifdec=Test-Path -LiteralPath $avifdec -PathType Leaf
-    $running=[System.Collections.Generic.List[object]]::new()
+    $verifyDir=Join-Path $ScratchDir ('avif_verify_'+[Guid]::NewGuid().ToString('N'))
+    [void](New-Item -ItemType Directory -Path $verifyDir -ErrorAction Stop)
     $failures=[System.Collections.Generic.List[string]]::new()
-    $next=0
-    $verified=0
     try {
-        while ($verified -lt $Paths.Count) {
+        for ($i=0; $i -lt $Paths.Count; $i++) {
             if ($CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'AVIF verification cancelled' }
-            if ($TimeoutSeconds -gt 0) {
-                foreach ($job in $running) {
-                    if (((Get-Date)-$job.Started).TotalSeconds -gt $TimeoutSeconds) {
-                        throw 'AVIF verification timed out'
-                    }
-                }
-            }
-            while ($next -lt $Paths.Count -and $running.Count -lt $processLimit) {
-                $last=[Math]::Min($Paths.Count,$next+$batchSize)-1
-                $group=[string[]]@($Paths[$next..$last])
-                $p=$null
-                try {
-                    $info=[Diagnostics.ProcessStartInfo]::new()
-                    $info.FileName=$FFmpeg
-                    $info.Arguments=Get-GpuVerifyArguments -Paths $group
-                    $info.UseShellExecute=$false
-                    $info.CreateNoWindow=$true
-                    $p=[Diagnostics.Process]::new()
-                    $p.StartInfo=$info
-                    if (-not $p.Start()) { throw "AVIF検証プロセスを起動できません: $($group[0])" }
-                    $running.Add([pscustomobject]@{Process=$p; Paths=$group; Started=(Get-Date)})
-                    $p=$null
-                }
-                finally {
-                    if ($null -ne $p) { $p.Dispose() }
-                }
-                $next=$last+1
-            }
-
-            $gotResult=$false
-            for ($i=$running.Count-1; $i -ge 0; $i--) {
-                $job=$running[$i]
-                if (-not $job.Process.HasExited) { continue }
-                $gotResult=$true
-                $code=$job.Process.ExitCode
-                $job.Process.Dispose()
-                $running.RemoveAt($i)
-
-                $invalid=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-                if ($code -ne 0) {
-                    Write-Warning ("AVIFバッチ検証失敗 (FFmpeg code {0}, {1}枚)。各画像を単体で再検証します。" -f $code,$job.Paths.Count)
-                    foreach ($path in $job.Paths) {
-                        $singleCode=Invoke-FFmpegSingleAvifProbe -Path $path -FFmpeg $FFmpeg -CancelFile $CancelFile -TimeoutSeconds $TimeoutSeconds
-                        if ($singleCode -ne 0) {
-                            [void]$invalid.Add($path)
-                            Write-Warning ("AVIF単体デコード失敗 (FFmpeg code {0}): {1}" -f $singleCode,$path)
-                        }
-                    }
-                    if ($invalid.Count -eq 0) {
-                        Write-Warning 'AVIFバッチのみ失敗。単体検証は全枚成功したため、CPU再変換せず続行します。'
-                    }
-                }
-
-                foreach ($path in $job.Paths) {
-                    if ($invalid.Contains($path)) {
-                        if (-not $failures.Contains($path)) { $failures.Add($path) }
-                        $verified++
-                        continue
-                    }
-                    # Independently decode a sampled file with libavif when present.
-                    if ($hasAvifdec) {
-                        $testPng=[IO.Path]::ChangeExtension($path,'.validated.png')
-                        try {
-                            $decodeCode=0
-                            if ($TimeoutSeconds -gt 0) {
-                                $decodeProcess=[Diagnostics.Process]::new()
-                                $decodeClock=[Diagnostics.Stopwatch]::StartNew()
-                                try {
-                                    $decodeProcess.StartInfo.FileName=$avifdec
-                                    $decodeProcess.StartInfo.Arguments='"{0}" "{1}"' -f $path,$testPng
-                                    $decodeProcess.StartInfo.UseShellExecute=$false
-                                    $decodeProcess.StartInfo.CreateNoWindow=$true
-                                    if (-not $decodeProcess.Start()) { throw 'avifdec start failed' }
-                                    while (-not $decodeProcess.WaitForExit(20)) {
-                                        if ($CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'avifdec cancelled' }
-                                        if ($decodeClock.Elapsed.TotalSeconds -gt $TimeoutSeconds) { throw 'avifdec timed out' }
-                                    }
-                                    $decodeCode=$decodeProcess.ExitCode
-                                }
-                                finally {
-                                    try { if (-not $decodeProcess.HasExited) { $decodeProcess.Kill(); $decodeProcess.WaitForExit() } } catch { }
-                                    $decodeProcess.Dispose()
-                                    $decodeClock.Stop()
-                                }
-                            }
-                            else {
-                                & $avifdec $path $testPng | Out-Null
-                                $decodeCode=$LASTEXITCODE
-                            }
-                            if ($decodeCode -ne 0 -or -not (Test-Path -LiteralPath $testPng -PathType Leaf)) {
-                                Write-Warning ("libavif単体デコード失敗 (code {0}): {1}" -f $decodeCode,$path)
-                                if (-not $failures.Contains($path)) { $failures.Add($path) }
-                            }
-                        }
-                        finally { Remove-Item -LiteralPath $testPng -Force -ErrorAction SilentlyContinue }
-                    }
-                    $verified++
-                }
-                if ($verified -eq $Paths.Count -or ($verified % 20) -eq 0) {
-                    Write-Host ("  AVIF検証: {0}/{1} 枚" -f $verified,$Paths.Count) -ForegroundColor DarkCyan
-                }
-            }
-            if (-not $gotResult) { Start-Sleep -Milliseconds 20 }
-        }
-    }
-    finally {
-        foreach ($job in $running) {
+            $path=$Paths[$i]
+            $output=Join-Path $verifyDir ('decoded_{0:D6}.png' -f $i)
+            $process=[Diagnostics.Process]::new()
+            $started=$false
+            $clock=[Diagnostics.Stopwatch]::StartNew()
             try {
-                if (-not $job.Process.HasExited) { $job.Process.Kill(); $job.Process.WaitForExit() }
+                $process.StartInfo.FileName=$Avifdec
+                $process.StartInfo.Arguments=Get-AvifDecodeArguments -InputPath $path -OutputPath $output
+                $process.StartInfo.UseShellExecute=$false
+                $process.StartInfo.CreateNoWindow=$true
+                if (-not $process.Start()) { throw "CPU AVIFデコーダーを起動できません: $path" }
+                $started=$true
+                while (-not $process.WaitForExit(20)) {
+                    if ($CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'AVIF verification cancelled' }
+                    if ($clock.Elapsed.TotalSeconds -gt $TimeoutSeconds) { throw "AVIF verification timed out: $path" }
+                }
+                $code=$process.ExitCode
+                if ($code -ne 0 -or -not (Test-DecodedPng -Path $output)) {
+                    Write-Warning ("CPU avifdecでデコード失敗 (code {0}): {1}" -f $code,$path)
+                    $failures.Add($path)
+                }
             }
-            catch { }
-            finally { $job.Process.Dispose() }
+            finally {
+                if ($started -and -not $process.HasExited) {
+                    try { $process.Kill(); $process.WaitForExit() } catch { }
+                }
+                $process.Dispose()
+                $clock.Stop()
+                Remove-Item -LiteralPath $output -Force -ErrorAction SilentlyContinue
+            }
+            if (($i+1) -eq $Paths.Count -or (($i+1) % 20) -eq 0) {
+                Write-Host ("  CPU AVIF検証: {0}/{1} 枚" -f ($i+1),$Paths.Count) -ForegroundColor DarkCyan
+            }
         }
     }
+    finally { Remove-Item -LiteralPath $verifyDir -Recurse -Force -ErrorAction SilentlyContinue }
+
     if ($ReturnFailedPaths) { return $failures.ToArray() }
     if ($failures.Count -gt 0) {
-        throw ("AVIFデコード検証に失敗しました（単体で不適合 {0}枚）: {1}" -f $failures.Count,($failures -join ', '))
+        throw ("CPU AVIFデコード検証に失敗しました（{0}枚）: {1}" -f $failures.Count,($failures -join ', '))
     }
 }
 
