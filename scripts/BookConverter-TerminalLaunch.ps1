@@ -10,16 +10,10 @@ function New-BookConverterTerminalLaunch {
     param(
         [Parameter(Mandatory=$true)][string]$MainScript,
         [Parameter(Mandatory=$true)][string]$PowerShellPath,
-        [Parameter(Mandatory=$true)][ValidateSet('Manga','Magazine','GPU','MagazineGPU','Hybrid')][string]$Mode,
+        [Parameter(Mandatory=$true)][ValidateSet('Manga','Magazine')][string]$Mode,
         [string[]]$DroppedPaths=@()
     )
-    $modeArguments=switch($Mode){
-        'Manga' {''}
-        'Magazine' {'-Magazine'}
-        'GPU' {'-GPU'}
-        'MagazineGPU' {'-Magazine -GPU'}
-        'Hybrid' {'-ConversionMode Hybrid'}
-    }
+    $modeArguments=if($Mode -eq 'Magazine'){'-Magazine'}else{''}
 
     $pathLiterals=[System.Collections.Generic.List[string]]::new()
     foreach($path in @($DroppedPaths)){
