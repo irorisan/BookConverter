@@ -46,16 +46,21 @@ $SampleSafetyBytes = [long](2 * 1MB)
 function Get-VolumeInfo {
     param([string]$BaseName, [string]$ParentTitle = '')
 
-    # Strip only a trailing, delimited download-site tag in manga mode.
-    # Original input names and paths are never changed.
-    $siteTagPattern = '(?i)(?:[\s._-]+DL-Raw\.Se|[\[【(（]\s*DL-Raw\.Se\s*[\]】)）])\s*$'
-    $BaseName = [regex]::Replace($BaseName.Trim(), $siteTagPattern, '').Trim()
+    # Remove only explicit trailing scan/site metadata while parsing manga
+    # volumes. Accept stacked tags in either order, without renaming inputs.
+    $trailingTagPattern = '(?i)(?:[\s._-]+(?:DL-Raw\.Se|裁断)|[\[【(（]\s*(?:DL-Raw\.Se|裁断)\s*[\]】)）])\s*$'
+    $BaseName = $BaseName.Trim()
+    do {
+        $withoutTag = [regex]::Replace($BaseName, $trailingTagPattern, '').Trim()
+        if ($withoutTag -ceq $BaseName) { break }
+        $BaseName = $withoutTag
+    } while ($true)
 
     # Allow both traditional volume names (15巻 / v15 / vol.15) and
     # bracketed numbers such as （１５） / (15) / 作品名（１５）.
     # Preserve the title exactly; normalize only the detected volume number.
     $numberPattern = '[0-9０-９]+(?:[.．][0-9０-９]+)?[a-zA-Zａ-ｚＡ-Ｚ]?'
-    $namedVolumePattern = "(?:(?:第\s*)?$numberPattern\s*巻(?:\s*[aAbBａＡｂＢ])?|(?:v|vol(?:ume)?\.?)\s*$numberPattern(?:\s*[aAbBａＡｂＢ])?)"
+    $namedVolumePattern = "(?:(?:第\s*)?$numberPattern\s*巻(?:\s*[aAbBwWａＡｂＢｗＷ])?|(?:v|vol(?:ume)?\.?)\s*$numberPattern(?:\s*[aAbBwWａＡｂＢｗＷ])?)"
     $bracketVolumePattern = "[（(]\s*(?:$namedVolumePattern|$numberPattern)\s*[）)]"
     $volumePattern = "(?:$bracketVolumePattern|$namedVolumePattern)"
     # Some publisher EPUBs append credits after a volume number, for example:
@@ -774,7 +779,7 @@ function Invoke-AutoSizeAvif {
 
 function Get-VolumeLabel {
     param([string]$Raw)
-    # Remove A/B split markers without changing the volume number itself.
+    # Remove A/B split markers and W scan suffixes from the volume number.
     # Non-split trailing letters remain unchanged.
     $Raw = $Raw.Normalize([Text.NormalizationForm]::FormKC)
     if (-not ($Raw -match '^(?<whole>[0-9]+)(?<fraction>\.[0-9]+)?(?<suffix>[a-z]?)$')) {
@@ -784,7 +789,7 @@ function Get-VolumeLabel {
     if ($whole.Length -eq 0) { $whole = '0' }
     $label = $whole.PadLeft(2, '0')
     if ($Matches['fraction']) { $label += $Matches['fraction'] }
-    if ($Matches['suffix'] -and $Matches['suffix'] -notin @('a','b')) { $label += $Matches['suffix'] }
+    if ($Matches['suffix'] -and $Matches['suffix'] -notin @('a','b','w')) { $label += $Matches['suffix'] }
     return $label
 }
 

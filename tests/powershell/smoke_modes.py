@@ -90,6 +90,39 @@ def main() -> None:
             assert sha256(out / expected) == before[source], (source, expected, text)
             assert sha256(source) == before[source], source
 
+        # Cutting/scanning annotations and trailing W markers are metadata,
+        # not volume numbers. Bare volume names use the parent directory title.
+        cutting_cases = [
+            ("v27_裁断.cbz", "統一名 v27.cbz"),
+            ("第25巻w_裁断.cbz", "統一名 v25.cbz"),
+            ("TagStory 第26巻Ｗ-裁断.cbz", "統一名 v26.cbz"),
+            ("TagStory vol.28W [裁断].cbz", "統一名 v28.cbz"),
+            ("TagStory v29w [DL-Raw.Se] _裁断.cbz", "統一名 v29.cbz"),
+            ("TagStory 第30巻w【裁断】 [DL-Raw.Se].cbz", "統一名 v30.cbz"),
+            ("TagStory v31_裁断_DL-Raw.Se.cbz", "統一名 v31.cbz"),
+        ]
+        cutting = [(cbz(folder / name), expected) for name, expected in cutting_cases]
+        before_cutting = {p: sha256(p) for p, _ in cutting}
+        text = run_bat("Convert-Manga.bat", "統一名\n\nq\n", *(p for p, _ in cutting))
+        assert "成功: 7 / 上限超過: 0 / スキップ: 0 / 失敗: 0" in text, text
+        for source, expected in cutting:
+            assert sha256(out / expected) == before_cutting[source], (source, expected, text)
+            assert sha256(source) == before_cutting[source], source
+
+        # An embedded word must survive; an unnumbered standalone keeps its
+        # source-name identifier. Magazine mode must not strip the markers.
+        embedded_cutting = cbz(folder / "裁断研究所 v32.cbz")
+        without_volume = cbz(folder / "裁断研究所 あとがき_裁断.cbz")
+        text = run_bat("Convert-Manga.bat", "\n\nq\n", embedded_cutting)
+        assert (out / "裁断研究所 v32.cbz").is_file(), text
+        text = run_bat("Convert-Manga.bat", "統一名\n\nq\n", without_volume)
+        assert (out / "統一名 - 裁断研究所 あとがき_裁断.cbz").is_file(), text
+        magazine_cutting = cbz(folder / "月刊誌 第33巻w_裁断.cbz")
+        magazine_hash = sha256(magazine_cutting)
+        text = run_bat("Convert-Manga-Magazine.bat", "\nq\n", magazine_cutting)
+        assert sha256(out / magazine_cutting.name) == magazine_hash
+        assert sha256(magazine_cutting) == magazine_hash
+
         # A/B-only differences now collide by design; only the output is
         # deduplicated. The two originals must remain unchanged.
         split_a = cbz(folder / "TagStory v12A.cbz")
