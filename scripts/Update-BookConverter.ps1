@@ -33,9 +33,7 @@ try {
     $source = Join-Path $unpacked 'BookConverter-main'
     foreach ($mandatory in @(
         'Convert-Manga.bat',
-        'Convert-Manga-GPU.bat',
         'Convert-Manga-Magazine.bat',
-        'Convert-Manga-Magazine-GPU.bat',
         'Update-BookConverter.bat',
         'scripts\Convert-Manga.ps1',
         'scripts\GPU-Functions.ps1',
@@ -67,6 +65,20 @@ try {
         $processed.Add($relative)
         New-Item -Path (Split-Path -Parent $destination) -ItemType Directory -Force | Out-Null
         Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+    }
+
+    # Remove only three known, retired BookConverter BATs from older local installs.
+    # Back them up like overwritten files so cleanup can be rolled back safely.
+    $retiredBats=@('Convert-Manga-GPU.bat','Convert-Manga-Magazine-GPU.bat','Convert-Manga-Hybrid.bat')
+    foreach($relative in $retiredBats){
+        $destination=Join-Path $root $relative
+        if(-not (Test-Path -LiteralPath $destination -PathType Leaf)){continue}
+        $backup=Join-Path $backupRoot $relative
+        [void](New-Item -Path (Split-Path -Parent $backup) -ItemType Directory -Force)
+        Copy-Item -LiteralPath $destination -Destination $backup -Force
+        $hadFile[$relative]=$true
+        $processed.Add($relative)
+        Remove-Item -LiteralPath $destination -Force
     }
 
     Write-Host ('Updated from GitHub main: {0} files.' -f $files.Count) -ForegroundColor Green
