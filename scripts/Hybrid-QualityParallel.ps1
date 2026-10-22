@@ -1,26 +1,6 @@
 # PowerShell 7.6 ThreadJobs keep the independent GPU and CPU size searches
 # concurrent without introducing another executable or changing search criteria.
 
-# Independent of the CPU worker count used by the Hybrid full conversion.
-function Select-CpuProbeWorkers {
-    param([Nullable[int]]$Requested, [switch]$Interactive)
-    if ($null -ne $Requested) {
-        if ($Requested -lt 0 -or $Requested -gt 8) { throw 'CPU品質探索並列数は0～8で指定してください' }
-        return [int]$Requested
-    }
-    if (-not $Interactive) { return 4 }
-    while ($true) {
-        $answer = Read-MangaResponse 'CPU品質探索の並列数 [0-8]（Enterで4、0でCPU探索を省略）'
-        if ($null -eq $answer) { return $null }
-        $answer = $answer.Trim()
-        if ($answer -eq '') { return 4 }
-        $number = 0
-        if ([int]::TryParse($answer, [ref]$number) -and $number -ge 0 -and $number -le 8) {
-            return $number
-        }
-        Write-Host '0～8の整数かEnterを入力してください。' -ForegroundColor Yellow
-    }
-}
 function Invoke-HybridQualitySearch {
     param(
         [Parameter(Mandatory=$true)][System.Collections.Generic.List[object]]$Entries,
