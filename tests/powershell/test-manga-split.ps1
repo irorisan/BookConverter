@@ -61,12 +61,43 @@ try {
     Ensure ($LASTEXITCODE -eq 0) 'mixed duplicate archive/folder failed'
     Ensure (Test-Path -LiteralPath (Join-Path $temp '合成 & 1_裁断 (2).cbz')) 'collision should create a unique name'
     Ensure (Test-Path -LiteralPath (Join-Path $temp 'source_裁断.cbz')) 'folder input output missing'
-    $bad=Join-Path $temp 'no-cover'
+    # Real manga often uses title prefixes or a different zero-padding width.
+    # No basename exactly '001' should be required.
+    $prefixed=Join-Path $temp '巻名 & 表紙'
+    [void][IO.Directory]::CreateDirectory($prefixed)
+    New-Image (Join-Path $prefixed '作品名01.png') 16 4 $true
+    New-Image (Join-Path $prefixed '作品名02.png') 16 4 $false
+    Copy-Item -LiteralPath (Join-Path $source 'ComicInfo.xml') -Destination $prefixed
+    & pwsh.exe -NoLogo -NoProfile -File $script $prefixed
+    Ensure ($LASTEXITCODE -eq 0) 'prefixed first image should be accepted'
+    Test-Result (Join-Path $temp '巻名 & 表紙_裁断.cbz')
+
+    $numeric=Join-Path $temp '自然順'
+    [void][IO.Directory]::CreateDirectory($numeric)
+    New-Image (Join-Path $numeric '作品名10.png') 16 4 $false
+    New-Image (Join-Path $numeric '作品名2.png') 16 4 $true
+    Copy-Item -LiteralPath (Join-Path $source 'ComicInfo.xml') -Destination $numeric
+    & pwsh.exe -NoLogo -NoProfile -File $script $numeric
+    Ensure ($LASTEXITCODE -eq 0) 'first image in natural numeric order must become cover'
+    Test-Result (Join-Path $temp '自然順_裁断.cbz')
+
+    # Even 002.png is valid as the first/only image; name is not a sentinel.
+    $single=Join-Path $temp '単枚'
+    [void][IO.Directory]::CreateDirectory($single)
+    New-Image (Join-Path $single '002.png') 16 4 $true
+    & pwsh.exe -NoLogo -NoProfile -File $script $single
+    Ensure ($LASTEXITCODE -eq 0) 'first image not named 001 should work'
+    $singleExtract=Join-Path $temp 'only-output'
+    [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $temp '単枚_裁断.cbz'),$singleExtract)
+    $singlePages=@(Get-ChildItem -LiteralPath $singleExtract -Filter '*.png')
+    Ensure ($singlePages.Count -eq 1 -and $singlePages[0].Name -eq '0001.png') 'single image must be saved only as cover'
+
+    $bad=Join-Path $temp 'empty-images'
     [void][IO.Directory]::CreateDirectory($bad)
-    New-Image (Join-Path $bad '002.png') 16 4 $false
+    [IO.File]::WriteAllText((Join-Path $bad 'README.txt'),'No images')
     & pwsh.exe -NoLogo -NoProfile -File $script $bad
-    Ensure ($LASTEXITCODE -ne 0) 'missing 001 should fail'
-    Ensure (-not (Test-Path -LiteralPath (Join-Path $temp 'no-cover_裁断.cbz'))) 'bad input produced output'
+    Ensure ($LASTEXITCODE -ne 0) 'image-free input should fail'
+    Ensure (-not (Test-Path -LiteralPath (Join-Path $temp 'empty-images_裁断.cbz'))) 'bad input produced output'
     Write-Host 'MangaSplit synthetic smoke tests passed.'
 } finally {
     if(Test-Path -LiteralPath $temp){Remove-Item -LiteralPath $temp -Force -Recurse}
