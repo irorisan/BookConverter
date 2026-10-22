@@ -41,8 +41,8 @@ BookConverter/
 │   ├── GPU-Functions.ps1
 │   └── Update-BookConverter.ps1
 └── tools/
-    ├── ffmpeg.exe    （GPU版）
-    ├── avifenc.exe   （CPU版）
+    ├── ffmpeg.exe    （Hybrid GPU側）
+    ├── avifenc.exe   （Hybrid CPU側）
     └── dwebp.exe     （WebP入力時）
 ```
 
@@ -182,6 +182,5 @@ ONE PIECE/
 - JPEGやWebP→AVIFは**非可逆の再エンコード**です。画質が改善するわけではありません。Kavita・Mihonでの表紙とページ表示、細い文字・トーンを最初の1巻で確認してください。
 - 数値表記は「MiB」（1MiB = 1,048,576バイト）です。Windowsのファイル容量表示に近い単位です。
 - **WinRAR・avifenc・dwebpを使うWindows実機E2Eは未検証**です。CIではPowerShell 7.6のBAT連続変換・小型CBZのSHA-256・EPUB/spine・自然順・命名・容量境界を検証します。実機ドロップも未確認です。[実機の確認手順](DOCS/PHASE3_4_CONTINUOUS.md) に従い、初めに少数ページ・1巻で確認してください。
-GPU12＋CPU4の実験は [設計・測定手順](DOCS/HYBRID_AVIF.md) を参照。
+GPU12＋CPU4の構成は [設計・測定手順](DOCS/HYBRID_AVIF.md) を参照。
 Hybridは両方の標準BATから直接起動します。`scripts/Convert-Manga.ps1`は既定Hybridで、必要なら`-CpuProbeWorkers 1..8`を指定してCPU独立探索を比較できます。既定0はGPU主体＋最大3枚CPU校正、CPU本変換は既定4プロセスです。詳細は[設計・測定手順](DOCS/HYBRID_AVIF.md)。
-で明示起動する。比較用は `-ConversionMode GPU`。HybridのCPU品質探索は**入力質問なし・既定0（GPU主体）**です。必要に応じて引数 `-CpuProbeWorkers 1..8` でCPU独立探索の並列数を指定可能。**0はGPU主体モード**となり、GPU探索後にCPUの最大3代表ページを短時間校正して本変換へ再利用します。容量超過時はCPU/GPUの変更が必要なページだけ再エンコードします。CPU本変換の既定4並列は維持します。対話BAT・自動実行・パイプ入力はいずれも既定0です。詳しくは[設計・測定手順](DOCS/HYBRID_AVIF.md)。既存BATの既定動作は変わらない。
