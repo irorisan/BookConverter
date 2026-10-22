@@ -43,9 +43,9 @@ function Check([string]$path,[int[]]$widths,[bool]$jpeg) {
         $b=[Drawing.Bitmap]::new($files[$i].FullName)
         try{
             if($jpeg) {
-                Assert ($b.Width -ge ($widths[$i] - 2) -and $b.Width -le ($widths[$i] + 4)) "JPEG trim wrong width page $i: $($b.Width)"
+                Assert ($b.Width -ge ($widths[$i] - 2) -and $b.Width -le ($widths[$i] + 4)) "JPEG trim wrong width page ${i}: $($b.Width)"
             } else {
-                Assert ($b.Width -eq $widths[$i]) "margin not trimmed page $i: $($b.Width) expected $($widths[$i])"
+                Assert ($b.Width -eq $widths[$i]) "margin not trimmed page ${i}: $($b.Width) expected $($widths[$i])"
             }
             Assert ($b.Height -eq 20) 'vertical resolution changed'
             $edge=$b.GetPixel([int]($b.Width/2),10)
