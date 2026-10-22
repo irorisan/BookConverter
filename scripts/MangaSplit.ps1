@@ -156,73 +156,11 @@ function Process-Manga([string]$path){
                 $_.FullName -notmatch '[\\/]__MACOSX[\\/]'
             } | Sort-Object @{Expression={Get-NaturalKey $_.FullName}})
         if($images.Count -eq 0){throw 'No JPG/JPEG/PNG images found.'}
-        # The trailing numeric run before the extension is the page number:
-        # 13DL.me_Net_0004.jpg => 4 (not the 13 in the name prefix).
+        # The final decimal run in the basename is the page index.
+        # 13DL.me_Net_0004.jpg => 4, ignoring 13 in the prefix.
         $numbered=@(
             foreach($file in $images) {
-                $suffix=[regex]::Match($file.BaseName, '[0-9]+
-        $spreads=@($images | Select-Object -Skip 1)
-        Write-Host ("Cover (first image): {0}" -f $cover.Name)
-        Write-Host ('Images: {0}, output pages: {1}' -f $images.Count,(1+2*$spreads.Count))
-        $index=1
-        foreach($file in @($cover)+$spreads){
-            $image=[Drawing.Bitmap]::new($file.FullName)
-            try{
-                $width=$image.Width
-                $height=$image.Height
-                if($width -lt 2 -or $height -lt 1){throw "Image is too small: $($file.Name)"}
-                $half=[int][Math]::Floor($width/2)
-                $format=if($file.Extension.ToLowerInvariant() -in @('.jpg','.jpeg')){'jpg'}else{'png'}
-                $selections=if($file.FullName -eq $cover.FullName){
-                    @([Drawing.Rectangle]::new([int][Math]::Floor(($width-$half)/2),0,$half,$height))
-                } else {
-                    @(
-                        [Drawing.Rectangle]::new($half,0,$width-$half,$height),
-                        [Drawing.Rectangle]::new(0,0,$half,$height)
-                    )
-                }
-                foreach($selection in $selections){
-                    $name=('{0:D4}.{1}' -f $index,$format)
-                    Save-Page $image $selection (Join-Path $pages $name) $format
-                    $index++
-                }
-            } finally {$image.Dispose()}
-        }
-        $files=@(Get-ChildItem -LiteralPath $root -Recurse -File)
-        Copy-Metadata $files $pages
-        [IO.Compression.ZipFile]::CreateFromDirectory(
-            $pages,$packed,[IO.Compression.CompressionLevel]::Optimal,$false)
-        $output=Get-Output $parent $base
-        $stage=Join-Path $parent ('.MangaSplit_'+[guid]::NewGuid().ToString('N')+'.tmp')
-        [IO.File]::Copy($packed,$stage,$false)
-        [IO.File]::Move($stage,$output)
-        $stage=$null
-        Write-Host "Saved: $output" -ForegroundColor Green
-    } finally {
-        if($stage -and (Test-Path -LiteralPath $stage)){
-            Remove-Item -LiteralPath $stage -Force -ErrorAction SilentlyContinue
-        }
-        if(Test-Path -LiteralPath $temp){
-            Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
-if(-not $Inputs -or $Inputs.Count -eq 0){
-    throw 'Drop folders, ZIP, CBZ or RAR files onto MangaSplit.bat.'
-}
-$failed=0
-foreach($path in $Inputs){
-    Write-Host "`nInput: $path" -ForegroundColor Cyan
-    try { Process-Manga $path }
-    catch {
-        $failed++
-        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
-    }
-}
-Write-Host ("`nResult: {0} succeeded, {1} failed" -f ($Inputs.Count-$failed),$failed)
-if($failed -ne 0){throw ("MangaSplit: {0} input(s) failed. See errors above." -f $failed)}
-)
+                $suffix=[regex]::Match($file.BaseName, '[0-9]+$')
                 if($suffix.Success) {
                     [pscustomobject]@{
                         File=$file
@@ -255,69 +193,7 @@ if($failed -ne 0){throw ("MangaSplit: {0} input(s) failed. See errors above." -f
         }
         elseif($numbered.Count -gt 0) {
             $withoutNumber=@($images |
-                Where-Object { $_.BaseName -notmatch '[0-9]+
-        $spreads=@($images | Select-Object -Skip 1)
-        Write-Host ("Cover (first image): {0}" -f $cover.Name)
-        Write-Host ('Images: {0}, output pages: {1}' -f $images.Count,(1+2*$spreads.Count))
-        $index=1
-        foreach($file in @($cover)+$spreads){
-            $image=[Drawing.Bitmap]::new($file.FullName)
-            try{
-                $width=$image.Width
-                $height=$image.Height
-                if($width -lt 2 -or $height -lt 1){throw "Image is too small: $($file.Name)"}
-                $half=[int][Math]::Floor($width/2)
-                $format=if($file.Extension.ToLowerInvariant() -in @('.jpg','.jpeg')){'jpg'}else{'png'}
-                $selections=if($file.FullName -eq $cover.FullName){
-                    @([Drawing.Rectangle]::new([int][Math]::Floor(($width-$half)/2),0,$half,$height))
-                } else {
-                    @(
-                        [Drawing.Rectangle]::new($half,0,$width-$half,$height),
-                        [Drawing.Rectangle]::new(0,0,$half,$height)
-                    )
-                }
-                foreach($selection in $selections){
-                    $name=('{0:D4}.{1}' -f $index,$format)
-                    Save-Page $image $selection (Join-Path $pages $name) $format
-                    $index++
-                }
-            } finally {$image.Dispose()}
-        }
-        $files=@(Get-ChildItem -LiteralPath $root -Recurse -File)
-        Copy-Metadata $files $pages
-        [IO.Compression.ZipFile]::CreateFromDirectory(
-            $pages,$packed,[IO.Compression.CompressionLevel]::Optimal,$false)
-        $output=Get-Output $parent $base
-        $stage=Join-Path $parent ('.MangaSplit_'+[guid]::NewGuid().ToString('N')+'.tmp')
-        [IO.File]::Copy($packed,$stage,$false)
-        [IO.File]::Move($stage,$output)
-        $stage=$null
-        Write-Host "Saved: $output" -ForegroundColor Green
-    } finally {
-        if($stage -and (Test-Path -LiteralPath $stage)){
-            Remove-Item -LiteralPath $stage -Force -ErrorAction SilentlyContinue
-        }
-        if(Test-Path -LiteralPath $temp){
-            Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
-if(-not $Inputs -or $Inputs.Count -eq 0){
-    throw 'Drop folders, ZIP, CBZ or RAR files onto MangaSplit.bat.'
-}
-$failed=0
-foreach($path in $Inputs){
-    Write-Host "`nInput: $path" -ForegroundColor Cyan
-    try { Process-Manga $path }
-    catch {
-        $failed++
-        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
-    }
-}
-Write-Host ("`nResult: {0} succeeded, {1} failed" -f ($Inputs.Count-$failed),$failed)
-if($failed -ne 0){throw ("MangaSplit: {0} input(s) failed. See errors above." -f $failed)}
- } |
+                Where-Object { $_.BaseName -notmatch '[0-9]+$' } |
                 Select-Object -First 3 -ExpandProperty Name)
             throw ("Mixed numbered and unnumbered images; cannot determine safe order: {0}" -f
                 ($withoutNumber -join ', '))
