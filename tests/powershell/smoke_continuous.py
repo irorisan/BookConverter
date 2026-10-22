@@ -73,7 +73,7 @@ def main() -> None:
         good = cbz(folder / '回復作品 v07.cbz')
         fresh = cbz(folder / '再開作品 v01.cbz')
         originals.update({p: sha256(p) for p in (broken, good, fresh, unsupported)})
-        text = run(f'"{broken}" "{good}"\n混在作品\n"{fresh}"\n\nq\n')
+        text = run(f'"{broken}" "{good}"\n混在作品\n"{fresh}"\n\nq\n', expected=1)
         assert '成功: 1 / 上限超過: 0 / スキップ: 0 / 失敗: 1' in text, text
         assert '成功: 1 / 上限超過: 0 / スキップ: 0 / 失敗: 0' in text, text
         assert '[1/1] 再開作品 v01.cbz' in text, text
