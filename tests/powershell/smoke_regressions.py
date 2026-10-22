@@ -39,11 +39,11 @@ def main() -> None:
         assert_pages(root / 'avif変換cbz' / '単巻フォルダ.cbz', ['1.png', '2.png', '10.png'], [png(COLORS[c]) for c in colors])
         assert not output(unsafe, 'traversal.cbz').exists()
 
-        # Normalized b collision and retained a/fullwidth volume suffixes.
+        # Normalized both a/b suffixes and fullwidth volume digits.
         volumes = [cbz(root / n) for n in ['巻物 v100b.cbz', '巻物 v100.cbz', '巻物 v03a.cbz', '巻物（１５）.cbz']]
         text = run('\n\nq\n', *volumes)
         assert '成功: 3 / 上限超過: 0 / スキップ: 1 / 失敗: 0' in text, text
-        for name in ['巻物 v100.cbz', '巻物 v03a.cbz', '巻物 v15.cbz']:
+        for name in ['巻物 v100.cbz', '巻物 v03.cbz', '巻物 v15.cbz']:
             assert (root / 'avif変換cbz' / name).is_file()
 
         # Exact 60MiB uses a byte copy; no WinRAR/avifenc download is involved.
