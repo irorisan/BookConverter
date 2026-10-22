@@ -22,8 +22,8 @@ Check ($main -notmatch '\$GPU\b|\$ConversionMode\b') 'Legacy mode flags should n
 Check ($main -match 'Invoke-HybridQualitySearch') 'Hybrid quality exploration must remain'
 Check ($main -match 'Invoke-GpuLedHybridConversion') 'GPU-led CPU calibration/caching must remain'
 Check ($main -notmatch 'avifenc\.exeでの変換に失敗しました（終了コード') 'Obsolete Legacy CPU encoder loop remains'
-Check ($terminal -match "ValidateSet\('Manga','Magazine'\)") 'Terminal command builder should offer only two modes'
-Check ($starter -match "ValidateSet\('Manga','Magazine'\)") 'Terminal launcher should offer only two modes'
+Check ($terminal -match "ValidateSet\('Manga','Magazine','Split'\)") 'Terminal command builder must keep two converters and separate Split utility'
+Check ($starter -match "ValidateSet\('Manga','Magazine','Split'\)") 'Terminal launcher must keep two converters and separate Split utility'
 Check ($terminal -notmatch "'-ConversionMode Hybrid'") 'Hybrid should be unconditional, not user-selected'
 $bench=Get-Content -LiteralPath (Join-Path $root 'scripts/Benchmark-Hybrid.ps1') -Raw -Encoding UTF8
 Check ($bench -notmatch "'GPU','Hybrid'|'-ConversionMode|GPU wall-time change") 'Benchmark must not compare removed GPU-only mode'
