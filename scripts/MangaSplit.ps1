@@ -72,6 +72,69 @@ function Expand-Manga([IO.FileSystemInfo]$item, [string]$destination) {
     }
 }
 
+function Test-SideMarginColumn(
+    [Drawing.Bitmap]$image, [Drawing.Rectangle]$rect, [int]$x
+) {
+    # Sampling the full height (up to 64 rows) avoids treating a white panel
+    # as empty unless its entire outer vertical stripe is blank.
+    $samples=[Math]::Min(64,$rect.Height)
+    if($samples -lt 3){return $false}
+    $white=$true
+    $black=$true
+    for($i=0;$i -lt $samples;$i++){
+        $y=$rect.Y+[int][Math]::Floor(($i*($rect.Height-1))/($samples-1))
+        $color=$image.GetPixel($x,$y)
+        if($color.A -lt 16){continue}
+        $neutral=([Math]::Max($color.R,[Math]::Max($color.G,$color.B)) -
+                  [Math]::Min($color.R,[Math]::Min($color.G,$color.B))) -le 18
+        $nearWhite=($neutral -and $color.R -ge 230 -and
+                    $color.G -ge 230 -and $color.B -ge 230)
+        $nearBlack=($color.R -le 26 -and $color.G -le 26 -and $color.B -le 26)
+        if(-not $nearWhite){$white=$false}
+        if(-not $nearBlack){$black=$false}
+        if(-not $white -and -not $black){return $false}
+    }
+    return ($white -or $black)
+}
+
+function Get-TrimmedPageRectangle(
+    [Drawing.Bitmap]$image, [Drawing.Rectangle]$selection, [int]$pageNumber
+) {
+    $maxTrim=[int][Math]::Floor($selection.Width*0.30)
+    if($maxTrim -lt 1){return $selection}
+    $left=0
+    while($left -le $maxTrim -and
+          (Test-SideMarginColumn $image $selection ($selection.X+$left))){
+        $left++
+    }
+    if($left -gt $maxTrim){
+        Write-Warning ("Page {0}: left blank exceeds 30%; keeping original edge." -f $pageNumber)
+        $left=0
+    }
+    $right=0
+    while($right -le $maxTrim -and
+          (Test-SideMarginColumn $image $selection ($selection.Right-1-$right))){
+        $right++
+    }
+    if($right -gt $maxTrim){
+        Write-Warning ("Page {0}: right blank exceeds 30%; keeping original edge." -f $pageNumber)
+        $right=0
+    }
+    # Leave a 2-pixel cushion near artwork in full-resolution manga.
+    $padding=if($selection.Width -ge 100){2}else{0}
+    $left=[Math]::Max(0,$left-$padding)
+    $right=[Math]::Max(0,$right-$padding)
+    if($left+$right -ge $selection.Width/2) {
+        Write-Warning ("Page {0}: uncertain blank area; keeping original width." -f $pageNumber)
+        return $selection
+    }
+    if($left -gt 0 -or $right -gt 0) {
+        Write-Host ("Page {0}: trim left {1}px, right {2}px" -f $pageNumber,$left,$right)
+    }
+    return [Drawing.Rectangle]::new(
+        $selection.X+$left,$selection.Y,$selection.Width-$left-$right,$selection.Height)
+}
+
 function Save-Page(
     [Drawing.Bitmap]$source, [Drawing.Rectangle]$selection, [string]$path, [string]$format
 ) {
@@ -226,7 +289,8 @@ function Process-Manga([string]$path){
                 }
                 foreach($selection in $selections){
                     $name=('{0:D4}.{1}' -f $index,$format)
-                    Save-Page $image $selection (Join-Path $pages $name) $format
+                    $trimmed=Get-TrimmedPageRectangle $image $selection $index
+                    Save-Page $image $trimmed (Join-Path $pages $name) $format
                     $index++
                 }
             } finally {$image.Dispose()}
