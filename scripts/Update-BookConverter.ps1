@@ -67,20 +67,6 @@ try {
         Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
     }
 
-    # Remove only three known, retired BookConverter BATs from older local installs.
-    # Back them up like overwritten files so cleanup can be rolled back safely.
-    $retiredBats=@('Convert-Manga-GPU.bat','Convert-Manga-Magazine-GPU.bat','Convert-Manga-Hybrid.bat')
-    foreach($relative in $retiredBats){
-        $destination=Join-Path $root $relative
-        if(-not (Test-Path -LiteralPath $destination -PathType Leaf)){continue}
-        $backup=Join-Path $backupRoot $relative
-        [void](New-Item -Path (Split-Path -Parent $backup) -ItemType Directory -Force)
-        Copy-Item -LiteralPath $destination -Destination $backup -Force
-        $hadFile[$relative]=$true
-        $processed.Add($relative)
-        Remove-Item -LiteralPath $destination -Force
-    }
-
     Write-Host ('Updated from GitHub main: {0} files.' -f $files.Count) -ForegroundColor Green
     Write-Host 'Preserved: tools/ (ffmpeg.exe, avifenc.exe, dwebp.exe), local data and .git'
     Write-Host 'Layout: root BATs; PowerShell scripts in scripts/.'
