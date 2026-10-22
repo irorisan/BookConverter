@@ -10,26 +10,24 @@ function Write-Progress {
         Status=$Status;PercentComplete=$PercentComplete;Done=[bool]$Completed})
 }
 
-# Interactive and argument-based probe selection are independent of full-pass CPU workers.
-$script:answers=[System.Collections.Generic.Queue[string]]::new()
-function Read-MangaResponse {
-    param([string]$Prompt)
-    if($script:answers.Count -eq 0){return $null}
-    return $script:answers.Dequeue()
+# The BAT entrypoint must never prompt for Hybrid CPU quality-probe workers:
+# default GPU-led mode (0), with explicit 1-8 still supported by CLI.
+$mainScript=Get-Content -LiteralPath (Join-Path $repo 'scripts/Convert-Manga.ps1') -Raw -Encoding UTF8
+$benchmarkScript=Get-Content -LiteralPath (Join-Path $repo 'scripts/Benchmark-Hybrid.ps1') -Raw -Encoding UTF8
+$parallelScript=Get-Content -LiteralPath (Join-Path $repo 'scripts/Hybrid-QualityParallel.ps1') -Raw -Encoding UTF8
+if($mainScript -notmatch '\[ValidateRange\(0,8\)\]\[int\]\$CpuProbeWorkers\s*=\s*0'){
+    throw 'The Hybrid CLI must default CpuProbeWorkers to zero without interaction'
 }
-if((Select-CpuProbeWorkers -Requested 0 -Interactive) -ne 0){throw 'Explicit zero must disable CPU probing'}
-if((Select-CpuProbeWorkers -Requested 8 -Interactive) -ne 8){throw 'Explicit eight must be permitted'}
-if((Select-CpuProbeWorkers -Interactive:$false) -ne 4){throw 'Noninteractive default must be four'}
-$script:answers.Enqueue('bad')
-$script:answers.Enqueue('9')
-$script:answers.Enqueue('-1')
-$script:answers.Enqueue('8')
-if((Select-CpuProbeWorkers -Interactive) -ne 8){throw 'Interactive validation and eight selection failed'}
-$script:answers.Enqueue('')
-if((Select-CpuProbeWorkers -Interactive) -ne 4){throw 'Interactive Enter default failed'}
-$script:answers.Enqueue('0')
-if((Select-CpuProbeWorkers -Interactive) -ne 0){throw 'Interactive zero selection failed'}
-if($null -ne (Select-CpuProbeWorkers -Interactive)){throw 'Interactive EOF must abort safely'}
+if($benchmarkScript -notmatch '\[ValidateRange\(0,8\)\]\[int\]\$CpuProbeWorkers\s*=\s*0'){
+    throw 'Benchmark defaults must match GPU-led zero CPU quality probing'
+}
+if($mainScript -match 'Select-CpuProbeWorkers|CPU品質探索の並列数' -or
+   $parallelScript -match 'Select-CpuProbeWorkers|CPU品質探索の並列数'){
+    throw 'The Hybrid quality-probe interactive prompt/selector must be removed'
+}
+if($mainScript -notmatch '\$selectedCpuProbeWorkers\s*=\s*\$CpuProbeWorkers'){
+    throw 'Explicit CLI CpuProbeWorkers must still flow into the Hybrid search'
+}
 
 
 # Dependency-free quality-search test: no mock encoder executable.

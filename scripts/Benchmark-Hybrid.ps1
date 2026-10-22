@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory=$true)][string]$InputPath,
     [Parameter(Mandatory=$true)][string]$ResultsDirectory,
     [ValidateRange(3,20)][int]$Repeats=3,
-    [ValidateRange(0,8)][int]$CpuProbeWorkers=4
+    [ValidateRange(0,8)][int]$CpuProbeWorkers=0
 )
 $ErrorActionPreference='Stop'
 if (-not $IsWindows -or $PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) {
