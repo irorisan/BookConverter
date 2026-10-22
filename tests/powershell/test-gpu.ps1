@@ -35,19 +35,19 @@ foreach ($batch in @('Convert-Manga.bat', 'Convert-Manga-Magazine.bat')) {
         throw "Missing Hybrid BAT: $batch"
     }
 }
-# AVIF verification must decode every page in bounded FFmpeg batches.
-$verifyPaths = @(1..8 | ForEach-Object { 'C:\test\page_{0:D3}.avif' -f $_ })
-$verifyArgs = Get-GpuVerifyArguments -Paths $verifyPaths
-foreach ($token in @('-xerror', '-max_error_rate 0', '-f null NUL')) {
-    if (-not $verifyArgs.Contains($token)) { throw "Missing FFmpeg verification option: $token" }
+# AVIF sample verification is independent of FFmpeg; CPU avifdec creates PNG.
+$decodeArgs=Get-AvifDecodeArguments -InputPath 'C:\画像 漫画\01.avif' -OutputPath 'C:\tmp dir\01.png'
+if ($decodeArgs -ne '"C:\画像 漫画\01.avif" "C:\tmp dir\01.png"') {
+    throw 'CPU AVIF decoder must preserve spaces and Japanese paths'
 }
-if ($verifyArgs.Contains('-c copy')) { throw 'AVIF verification must decode rather than copy streams' }
-foreach ($i in 0..7) {
-    if (-not $verifyArgs.Contains(('-map {0}:v:0' -f $i))) { throw "Missing decode stream $i" }
-}
-if ($verifyArgs.Contains('-map 8:v:0')) { throw 'Unexpected extra stream mapping' }
-if (($verifyArgs.Split([string[]]@(' -i '),[StringSplitOptions]::None).Count - 1) -ne 8) {
-    throw 'Each AVIF input must have a distinct -i'
+$blocked=$false
+try { Get-AvifDecodeArguments -InputPath 'C:\bad"quote.avif' -OutputPath 'C:\out.png' | Out-Null }
+catch { $blocked=$true }
+if (-not $blocked) { throw 'AVIF verification must reject quote injection' }
+foreach ($oldName in @('Get-GpuVerifyArguments','Invoke-GpuVerifyAvifBatch','Invoke-FFmpegSingleAvifProbe')) {
+    if (Get-Command $oldName -CommandType Function -ErrorAction SilentlyContinue) {
+        throw "FFmpeg decode function must be removed: $oldName"
+    }
 }
 
 # GPU must use one AVIF output and one input per FFmpeg process.
