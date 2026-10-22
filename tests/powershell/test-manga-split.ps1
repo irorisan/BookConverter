@@ -33,7 +33,7 @@ function Test-Result([string]$archive) {
         $b=[Drawing.Bitmap]::new($p[$i].FullName)
         try {
             Ensure ($b.Width -eq 8 -and $b.Height -eq 4) 'unexpected resize or crop'
-            Ensure ($b.GetPixel(2,1).ToArgb() -eq ([Drawing.Color]::$($colors[$i])).ToArgb()) "incorrect page order at $i"
+            Ensure ($b.GetPixel(2,1).ToArgb() -eq ([Drawing.Color]::FromName($colors[$i])).ToArgb()) "incorrect page order at $i"
         } finally { $b.Dispose() }
     }
     $xml=Join-Path $d 'ComicInfo.xml'
