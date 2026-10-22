@@ -98,6 +98,10 @@ jobs:
         shell: pwsh
         run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-gpu.ps1
 
+      - name: Verify batch AVIF decode isolation and selective recovery
+        shell: pwsh
+        run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-avif-decode-recovery.ps1
+
       - name: Smoke test GPU entrypoints and unchanged small CBZ
         shell: pwsh
         run: python tests/powershell/smoke_gpu_passthrough.py
