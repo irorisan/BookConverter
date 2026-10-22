@@ -46,11 +46,16 @@ $SampleSafetyBytes = [long](2 * 1MB)
 function Get-VolumeInfo {
     param([string]$BaseName, [string]$ParentTitle = '')
 
+    # Strip only a trailing, delimited download-site tag in manga mode.
+    # Original input names and paths are never changed.
+    $siteTagPattern = '(?i)(?:[\s._-]+DL-Raw\.Se|[\[【(（]\s*DL-Raw\.Se\s*[\]】)）])\s*$'
+    $BaseName = [regex]::Replace($BaseName.Trim(), $siteTagPattern, '').Trim()
+
     # Allow both traditional volume names (15巻 / v15 / vol.15) and
     # bracketed numbers such as （１５） / (15) / 作品名（１５）.
     # Preserve the title exactly; normalize only the detected volume number.
     $numberPattern = '[0-9０-９]+(?:[.．][0-9０-９]+)?[a-zA-Zａ-ｚＡ-Ｚ]?'
-    $namedVolumePattern = "(?:(?:第\s*)?$numberPattern\s*巻|(?:v|vol(?:ume)?\.?)\s*$numberPattern)"
+    $namedVolumePattern = "(?:(?:第\s*)?$numberPattern\s*巻(?:\s*[aAbBａＡｂＢ])?|(?:v|vol(?:ume)?\.?)\s*$numberPattern(?:\s*[aAbBａＡｂＢ])?)"
     $bracketVolumePattern = "[（(]\s*(?:$namedVolumePattern|$numberPattern)\s*[）)]"
     $volumePattern = "(?:$bracketVolumePattern|$namedVolumePattern)"
     # Some publisher EPUBs append credits after a volume number, for example:
@@ -769,8 +774,8 @@ function Invoke-AutoSizeAvif {
 
 function Get-VolumeLabel {
     param([string]$Raw)
-    # Input 'v100b' and 'v100B' are allowed, but strip only the trailing 'b' in output.
-    # Other suffixes (e.g. 'a') are unchanged.
+    # Remove A/B split markers without changing the volume number itself.
+    # Non-split trailing letters remain unchanged.
     $Raw = $Raw.Normalize([Text.NormalizationForm]::FormKC)
     if (-not ($Raw -match '^(?<whole>[0-9]+)(?<fraction>\.[0-9]+)?(?<suffix>[a-z]?)$')) {
         throw "未対応の巻数表記です: $Raw"
@@ -779,7 +784,7 @@ function Get-VolumeLabel {
     if ($whole.Length -eq 0) { $whole = '0' }
     $label = $whole.PadLeft(2, '0')
     if ($Matches['fraction']) { $label += $Matches['fraction'] }
-    if ($Matches['suffix'] -and $Matches['suffix'] -ine 'b') { $label += $Matches['suffix'] }
+    if ($Matches['suffix'] -and $Matches['suffix'] -notin @('a','b')) { $label += $Matches['suffix'] }
     return $label
 }
 
