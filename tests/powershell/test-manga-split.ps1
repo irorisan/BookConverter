@@ -5,7 +5,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $script = Join-Path $repo 'scripts/MangaSplit.ps1'
 $bat = Get-Content -LiteralPath (Join-Path $repo 'MangaSplit.bat') -Raw -ErrorAction SilentlyContinue
-if (-not $bat -or $bat -notmatch 'MangaSplit.ps1') { throw 'MangaSplit.bat entrypoint missing' }
+if (-not $bat -or $bat -notmatch 'Start-BookConverter-Terminal.ps1' -or $bat -notmatch '-Mode Split') { throw 'MangaSplit.bat Terminal entrypoint missing' }
 if (-not (Test-Path -LiteralPath $script)) { throw 'MangaSplit.ps1 missing' }
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('BookSplitTest_' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($temp)
