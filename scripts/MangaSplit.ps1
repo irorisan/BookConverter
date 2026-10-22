@@ -1,6 +1,6 @@
 #requires -Version 7.6
 <#
-MangaSplit: 001 -> centered cover; subsequent images -> right/left pages.
+MangaSplit: first image -> centered cover; subsequent images -> right/left pages.
 Sources are never modified. Output is a new sibling _裁断.cbz.
 #>
 param(
@@ -156,12 +156,56 @@ function Process-Manga([string]$path){
                 $_.FullName -notmatch '[\\/]__MACOSX[\\/]'
             } | Sort-Object @{Expression={Get-NaturalKey $_.FullName}})
         if($images.Count -eq 0){throw 'No JPG/JPEG/PNG images found.'}
-        $covers=@($images | Where-Object BaseName -eq '001')
-        if($covers.Count -ne 1){
-            throw "Exactly one 001.jpg/jpeg/png is needed; found $($covers.Count)."
+        # The final decimal run in the basename is the page index.
+        # 13DL.me_Net_0004.jpg => 4, ignoring 13 in the prefix.
+        $numbered=@(
+            foreach($file in $images) {
+                $suffix=[regex]::Match($file.BaseName, '[0-9]+$')
+                if($suffix.Success) {
+                    [pscustomobject]@{
+                        File=$file
+                        Page=[System.Numerics.BigInteger]::Parse(
+                            $suffix.Value, [Globalization.CultureInfo]::InvariantCulture)
+                    }
+                }
+            }
+        )
+        if($numbered.Count -eq $images.Count) {
+            $ordered=@($numbered | Sort-Object -Property @{
+                    Expression={$_.Page}
+                }, @{
+                    Expression={$_.File.FullName}
+                })
+            for($j=1;$j -lt $ordered.Count;$j++) {
+                $previous=$ordered[$j-1].Page
+                $current=$ordered[$j].Page
+                if($current -eq $previous) {
+                    throw ("Duplicate trailing page number {0}: {1} / {2}" -f
+                        $current,$ordered[$j-1].File.Name,$ordered[$j].File.Name)
+                }
+                if($current -gt ($previous + 1)) {
+                    Write-Warning ("Missing page number(s) between {0} and {1}." -f
+                        $previous,$current)
+                }
+            }
+            $images=@($ordered | ForEach-Object { $_.File })
+            Write-Host 'Page order: numeric trailing suffix'
         }
-        $cover=$covers[0]
-        $spreads=@($images | Where-Object FullName -ne $cover.FullName)
+        elseif($numbered.Count -gt 0) {
+            $withoutNumber=@($images |
+                Where-Object { $_.BaseName -notmatch '[0-9]+$' } |
+                Select-Object -First 3 -ExpandProperty Name)
+            throw ("Mixed numbered and unnumbered images; cannot determine safe order: {0}" -f
+                ($withoutNumber -join ', '))
+        }
+        else {
+            Write-Warning 'No trailing page numbers found; using natural filename order.'
+        }
+
+        # The first page after sorting becomes the centered cover.
+        $cover=$images[0]
+        $spreads=@($images | Select-Object -Skip 1)
+        Write-Host ("Cover (first image): {0}" -f $cover.Name)
         Write-Host ('Images: {0}, output pages: {1}' -f $images.Count,(1+2*$spreads.Count))
         $index=1
         foreach($file in @($cover)+$spreads){
