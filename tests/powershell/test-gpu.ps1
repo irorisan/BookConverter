@@ -30,9 +30,9 @@ foreach ($path in @((Join-Path $repo 'scripts\GPU-Functions.ps1'), (Join-Path $r
     [void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
     if ($errors -and $errors.Count -gt 0) { throw "PowerShell parse error in $path : $($errors[0])" }
 }
-foreach ($batch in @('Convert-Manga-GPU.bat', 'Convert-Manga-Magazine-GPU.bat')) {
+foreach ($batch in @('Convert-Manga.bat', 'Convert-Manga-Magazine.bat')) {
     if (-not (Test-Path -LiteralPath (Join-Path $repo $batch) -PathType Leaf)) {
-        throw "Missing GPU BAT: $batch"
+        throw "Missing Hybrid BAT: $batch"
     }
 }
 # AVIF verification must decode every page in bounded FFmpeg batches.
@@ -63,7 +63,7 @@ if ($sourceText.Contains('GPUプリセット [1-4]') -or
     $sourceText.Contains('-GpuBatchSize')) {
     throw 'Temporary GPU benchmark selection still exists'
 }
-if (-not $sourceText.Contains('$workers = 12') -or
+if (-not $sourceText.Contains('$workers = $GpuWorkers') -or
     -not $sourceText.Contains('Invoke-ParallelAvif')) {
     throw 'GPU encoder must use fixed twelve-process single-image path'
 }
@@ -74,4 +74,4 @@ if ($sampleStart -lt 0 -or $sampleEnd -le $sampleStart -or
     throw 'GPU quality samples must use the same fixed GPU encoder'
 }
 
-Write-Host 'GPU quality mapping, command arguments, PowerShell syntax and BATs: OK'
+Write-Host 'Hybrid GPU quality mapping, command arguments, PowerShell syntax and BATs: OK'
