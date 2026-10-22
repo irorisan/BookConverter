@@ -11,34 +11,27 @@ Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-M
 - GitHubには第三者の `avifenc.exe` バイナリを含めていません。必要な場合は従来の自動取得、または `tools\avifenc.exe` への配置を利用してください。
 - 開発計画は [DOCS/DEVELOPMENT_PLAN.md](DOCS/DEVELOPMENT_PLAN.md) を参照してください。
 
-## NVIDIA GPU（NVENC）でのAVIF変換
+## Hybrid AVIF（唯一の変換方式）
 
-**正式なGPUモードを追加しました。** RTX 40/50などのAV1 NVENC対応GPUが必要です。
-既存のCPUモードはそのまま利用でき、画像と出力CBZの保存ルールも共通です。
-
-| 起動BAT | 変換エンジン | モード |
+| 入口BAT | 対象 | 変換エンジン |
 |---|---|---|
-| `Convert-Manga-GPU.bat` | `ffmpeg.exe / av1_nvenc` | 漫画・GPU |
-| `Convert-Manga-Magazine-GPU.bat` | `ffmpeg.exe / av1_nvenc` | 雑誌・GPU |
-| `Convert-Manga.bat` | `avifenc.exe / CPU` | 漫画・CPU |
-| `Convert-Manga-Magazine.bat` | `avifenc.exe / CPU` | 雑誌・CPU |
+| `Convert-Manga.bat` | 漫画・巻物・漫画EPUB | **GPU + CPU Hybrid** |
+| `Convert-Manga-Magazine.bat` | 雑誌・単巻・雑誌EPUB | **GPU + CPU Hybrid** |
 
-- `ffmpeg.exe` は**同梱しません**。NVENCエンコーダー・AVIF muxer付きのWindowsビルドを用意し、`tools\ffmpeg.exe` に置くかPATHへ追加します。
-- GPU版は**FFmpeg 12プロセス × 各1画像**の固定構成です。品質探索とAVIF本変換の両方で、各プロセスが1画像ずつ独立したAVIFを作成します。GPU版では並列数の入力は不要です（CPU版は従来の1〜16並列を選択可能）。AVIFデコード検証は全ページを対象に**8画像ずつ・最大2プロセス**で実施します。**`-preset p7` 固定**、`-pix_fmt yuv420p`を維持します。250ページでの単回ベンチマークでは12×1が41.7秒、6×2が43.0秒、4×3が44.5秒、3×4が46.3秒でした。
-- 元ファイルが60MiB以下なら再圧縮しません。60MiB超では従来の最大12ページ×最大5回の試算で容量を調整し、70MiB以内を目指します。70MiB超過時は従来どおり警告付きで保存する場合があります。
-- Legacy GPUで生成されたAVIFはヘッダーと**全ページのFFmpegデコード**で検証します。実験GPU/Hybridは [Hybrid仕様](DOCS/HYBRID_AVIF.md) の最終サンプル検証を使用します。検証は**8ページずつまとめてFFmpegを起動**する方式で、FFmpegの起動回数を削減します。250ページなら約32起動です（効果は環境で変動）。検証エラーは成功扱いにせず中断します。`tools\avifdec.exe` があればlibavifでの追加検証も全ページ実施します。
-- NVENC実行エラー時は**黙ってCPU版へ切り替えません**。元データを保持したまま当該巻を失敗扱いとします。CPUを使う場合は従来のBATで実行してください。
-- CPUの画質設定QとGPUのCQは同一画質を示すものではありません。GPUモードの品質探索は独立した尺度として扱います。
-- 出力先は両方式とも `avif変換cbz`。既存の同名作品があれば安全のためスキップするので、比較時は生成済みのCBZを別の場所に移してから再変換してください。
-- KavitaやMihonでの表紙・本文表示は最初の数巻で確認することを推奨します。Windows/NVIDIA GPU実機テストはCIでは実行していません。
+- GPUは**FFmpeg AV1 NVENC 最大12プロセス**（`-preset p7` / `yuv420p`）、CPUは`avifenc.exe`最大4プロセス。RTX 40/50などAV1 NVENC対応GPUが必要です。
+- GPUで12代表ページ・最大5回の品質探索を行い、CPUは最大3枚でq70→q50→q40校正（既定）。選択した校正画像は本変換で再利用し、70MiB超過時は必要なページだけ再エンコード。明示的な`-CpuProbeWorkers 1..8`でCPU独立探索も利用できます。
+- **60MiB以下のCBZは元データをバイトコピー**。60MiB超の変換結果が70MiBを超えた場合は保存しません。原本と既存CBZは削除・上書きしません。
+- FFmpeg（NVENC/AVIF対応Windowsビルド）、`avifenc.exe`、WebP入力時の`dwebp.exe`が必要です。FFmpegは`tools\ffmpeg.exe`またはPATH。CPUエンコーダーはHybrid内で使用するため削除しません。
+- GPUエラー発生時はCPUで再試行し、失敗なら巻全体をエラー扱いにします。サンプルAVIFデコード検証およびCBZ順序/容量検証後に保存します。
+- 詳細: [Hybrid仕様](DOCS/HYBRID_AVIF.md)。GPU＋CPUの実機性能はWindows環境で確認してください。
 
 ## フォルダ構造と個人用アップデーター
 
 ```text
 BookConverter/
 ├── Convert-Manga.bat
-├── ├── Convert-Manga-Magazine.bat
-├── ├── Update-BookConverter.bat
+├── Convert-Manga-Magazine.bat
+├── Update-BookConverter.bat
 ├── scripts/
 │   ├── Convert-Manga.ps1
 │   ├── Convert-Manga-Epub.ps1
