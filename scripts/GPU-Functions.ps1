@@ -91,6 +91,7 @@ function Invoke-FFmpegSingleAvifProbe {
         [int]$TimeoutSeconds=0
     )
     $process=[Diagnostics.Process]::new()
+    $started=$false
     $clock=[Diagnostics.Stopwatch]::StartNew()
     try {
         $process.StartInfo.FileName=$FFmpeg
@@ -98,6 +99,7 @@ function Invoke-FFmpegSingleAvifProbe {
         $process.StartInfo.UseShellExecute=$false
         $process.StartInfo.CreateNoWindow=$true
         if (-not $process.Start()) { throw "AVIF単体検証プロセスを起動できません: $Path" }
+        $started=$true
         while (-not $process.WaitForExit(20)) {
             if ($CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'AVIF verification cancelled' }
             if ($TimeoutSeconds -gt 0 -and $clock.Elapsed.TotalSeconds -gt $TimeoutSeconds) {
@@ -107,7 +109,7 @@ function Invoke-FFmpegSingleAvifProbe {
         return [int]$process.ExitCode
     }
     finally {
-        if (-not $process.HasExited) {
+        if ($started -and -not $process.HasExited) {
             try { $process.Kill(); $process.WaitForExit() } catch { }
         }
         $process.Dispose()
