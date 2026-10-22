@@ -9,7 +9,12 @@
 
 **BookConverterは現行PowerShell + BATの変換処理を維持し、CUIの操作性・進捗・結果表示を最小限の変更で改善する。**
 
-- **採用技術**: PowerShell 7.6（Windows）を主処理とし、既存のBATによるドラッグ＆ドロップ起動を継続する。AVIF変換は既存の `avifenc`、必要なWebPデコードは `dwebp`、非EPUBアーカイブの展開は当面既存のWinRAR利用を前提とする。
+- **採用技術**: PowerShell 7.6（Windows）を主処理とし、既存のBATによるドラッグ＆ドロップ起動を継続する。
+- **Windows Terminalで起動**: 漫画・雑誌・GPU・Hybridの変換BAT 5種類はExplorerのドラッグ＆ドロップをそのまま受付け、短命なBAT/Powershellランチャー経由で `wt.exe -w new new-tab` を使って**新規Windows Terminalウィンドウ**内にPowerShell 7.6の変換処理を開始する。CMDウィンドウは起動用のみで変換UIには使わない。Windows Terminalの既定プロファイルには依存せず、`pwsh.exe`を明示実行する。変換完了後は従来どおり同じPowerShellで次の入力待ち。
+- **入力保持/安全性**: 漫画・雑誌・GPU・HybridのモードをBATごとに保持し、複数ドラッグパス・日本語・空白・アンパサンド・セミコロン・シングルクォート・PowerShell特殊文字を**文字列引数**として保持する。Windows Terminalへ渡すコマンドはUTF-16LEの`-EncodedCommand`にして、外部のファイル名やURLを`wt.exe`コマンドとして解釈させない。開始後に同じデータをコピー/移動しない。
+- **依存/エラー**: `wt.exe`（Windows Terminalのアプリ実行エイリアス）とPowerShell 7.6を起動前に確認し、どちらかがなければ説明を表示して中止する。Windows Terminalがない場合にCMDへ黙って切り替えない。ExplorerがBATを起動する際にはWindowsの仕様上、短時間CMDウィンドウが開く可能性がある。Updater BATは既存のままで、変換BAT以外を変更しない。
+- **検証**: 発行する`wt`引数・PowerShellコードを副作用なしのヘルパーで生成してPowerShell 7.6 Windows CIで検証。5つのBATのモード分離、複数引数・各種危険文字・プロセス引数エスケープ・UTF-16エンコード/復元、起動後の例外・環境依存エラー案内、既存CBZ/EPUBテストを実行する。GUIを伴う実際のExplorerドロップ/Terminal新窓表示はWindows実機で目視確認する。
+AVIF変換は既存の `avifenc`、必要なWebPデコードは `dwebp`、非EPUBアーカイブの展開は当面既存のWinRAR利用を前提とする。
 - **非採用**: Rust/Tauri/React/TypeScript/Tailwindへの移植、WebViewを使うGUI、凝ったダッシュボード、アプリの全面リライト、EXE化は**現計画から外す**。技術変更は実測された必要性が出たときに改めて検討する。
 - **UI方針**: 画面は**CUI（テキスト主体のコンソール）**。追加する視覚表現は全体/現在巻の進捗バー、状態、処理ログ、終了サマリー程度に限定。外部UIフレームワークを導入しない。
 - **連続処理**: 1バッチの変換完了後もウィンドウを閉じず、**同じコンソールで別の漫画を受け取り、新バッチとして最初から実行**できるようにする。前バッチのシリーズ名・入力一覧・カウンター・失敗状態を次バッチに引き継がない。
