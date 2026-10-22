@@ -12,7 +12,7 @@ Windows向けの漫画・雑誌をCBZにまとめるツールです。画像が�
 ## 動作条件
 
 - Windows、**PowerShell 7.6**、Windows Terminal（`wt.exe`）、AV1 NVENC対応のNVIDIA GPU。
-- `ffmpeg.exe`（NVENC・AVIF対応版、`tools/` またはPATH）とCPU用`avifenc.exe`（必要時に自動取得可）。WebP入力には`dwebp.exe`、RAR展開にはWinRARが必要です。
+- `ffmpeg.exe`（GPU NVENC・AVIFエンコード用、`tools/` またはPATH）、CPUエンコード用`avifenc.exe`、**CPU AVIF検証用`avifdec.exe`**（libavif公式版、必要時に自動取得）。WebP入力には`dwebp.exe`、RAR展開にはWinRARが必要です。FFmpegのAVIFデコーダーは使用しません。
 - Hybridの既定は **GPU 12並列＋CPU 4並列**。品質探索はGPU主体（CPU代表ページ校正）で、自動調整します。
 
 ## 保存ルール
