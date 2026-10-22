@@ -582,7 +582,7 @@ function Invoke-AutoSizeAvif {
         [long]$MaxTargetBytes,
         [long]$SampleSafetyBytes,
         [System.Collections.IDictionary]$StageTimes,
-        [ValidateRange(0,8)][int]$CpuProbeWorkers=4
+        [ValidateRange(0,8)][int]$CpuProbeWorkers=0
     )
     # ZIPヘッダー・中央ディレクトリエントリによる増分も見込む。
     $zipOverheadBytes = [long]0
@@ -596,8 +596,7 @@ function Invoke-AutoSizeAvif {
     $qualityTimer = [System.Diagnostics.Stopwatch]::StartNew()
     $calibration = $null
     try {
-        if ($ConversionMode -eq 'Hybrid') {
-            $parallel = Invoke-HybridQualitySearch -Entries $Entries -Encoder $Encoder -CpuEncoder $script:CpuEncoder `
+        $parallel = Invoke-HybridQualitySearch -Entries $Entries -Encoder $Encoder -CpuEncoder $script:CpuEncoder `
                 -Decoder $Decoder -GpuWorkers $GpuWorkers -CpuProbeWorkers $CpuProbeWorkers `
                 -ScratchDir $ScratchDir -VolumeName $OutputName -SampleLimitBytes $sampleLimit `
                 -ScriptRoot $PSScriptRoot -CancelFile $CancelFile -EncoderTimeoutSeconds $EncoderTimeoutSeconds
@@ -612,12 +611,6 @@ function Invoke-AutoSizeAvif {
                 $script:HybridCpuQuality = $parallel.CpuChoice.Quality
                 Write-Host "  Concurrent qualities: GPU CQ$(Convert-GpuQualityToCq $qualityChoice.Quality), CPU q$($script:HybridCpuQuality) ($CpuProbeWorkers workers)"
             }
-        }
-        else {
-            $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Decoder $Decoder `
-                -Workers $Workers -ScratchDir $ScratchDir -VolumeName $OutputName `
-                -SampleLimitBytes $sampleLimit -ShowProgress
-        }
     }
     finally {
         $qualityTimer.Stop()
@@ -625,7 +618,7 @@ function Invoke-AutoSizeAvif {
         if ($null -ne $StageTimes) { $StageTimes['品質探索'] += $qualityTimer.Elapsed }
     }
     $quality = $qualityChoice.Quality
-    if ($ConversionMode -eq 'Hybrid' -and $CpuProbeWorkers -eq 0) {
+    if ($CpuProbeWorkers -eq 0) {
         return Invoke-GpuLedHybridConversion -Entries $Entries -GpuProbe $qualityChoice.Probe `
             -Calibration $calibration -Encoder $Encoder -Decoder $Decoder -GpuQuality $quality `
             -ScratchDir $ScratchDir -OutputName $OutputName -MaxImageBytes $maxImageBytes `
@@ -731,23 +724,13 @@ function Invoke-AutoSizeAvif {
         if ($nextQuality -ge $quality) { $nextQuality = [int][Math]::Max(30, $quality - 1) }
         if ($nextQuality -eq $quality) { break }
         $quality = $nextQuality
-        if ($ConversionMode -in @('GPU','Hybrid')) {
-            $script:HybridCpuQuality=[Math]::Max(30,$script:HybridCpuQuality-5)
-            Write-Warning "CPU own quality reduced to $script:HybridCpuQuality for size retry"
-        }
+        $script:HybridCpuQuality=[Math]::Max(30,$script:HybridCpuQuality-5)
+        Write-Warning "CPU own quality reduced to $script:HybridCpuQuality for size retry"
         $selectedProbe = $nextProbe
         Write-Warning ('70MiB超過。追加の品質テストは行わず、Q{0}で再試行します。' -f $quality)
     }
 
-    if ($ConversionMode -in @('GPU','Hybrid')) { throw 'Experimental conversion exceeded 70MiB after size retries; no output committed' }
-    Write-Warning '70MiB以内に収まりませんでした。試した中で最小の結果を警告付きで保存します。'
-    return [pscustomobject]@{
-        Entries = $bestOversizeEntries
-        Quality = $bestOversizeQuality
-        Bytes = $bestOversizeBytes
-        Converted = $converted
-        UnderLimit = $false
-    }
+    throw 'Hybrid conversion exceeded 70MiB after size retries; no output committed'
 }
 
 function Get-VolumeLabel {
