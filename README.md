@@ -194,3 +194,7 @@ ONE PIECE/
 GPU12＋CPU4の実験は [設計・測定手順](DOCS/HYBRID_AVIF.md) を参照。
 `Convert-Manga-Hybrid.bat`（漫画）または `scripts/Convert-Manga.ps1 -ConversionMode Hybrid`
 で明示起動する。比較用は `-ConversionMode GPU`。HybridのCPU品質探索は**入力質問なし・既定0（GPU主体）**です。必要に応じて引数 `-CpuProbeWorkers 1..8` でCPU独立探索の並列数を指定可能。**0はGPU主体モード**となり、GPU探索後にCPUの最大3代表ページを短時間校正して本変換へ再利用します。容量超過時はCPU/GPUの変更が必要なページだけ再エンコードします。CPU本変換の既定4並列は維持します。対話BAT・自動実行・パイプ入力はいずれも既定0です。詳しくは[設計・測定手順](DOCS/HYBRID_AVIF.md)。既存BATの既定動作は変わらない。
+
+## 見開き裁断（別BAT）
+
+`MangaSplit.bat`は独立した裁断用入口です。巻ごとの`001.jpg/jpeg/png`を中央50%で表紙1ページに切り抜き、ほかの見開き画像を**右→左**の2ページに分割します。フォルダ/ZIP/CBZ/RARの複数入力を受け付け、原本の隣に`_裁断.cbz`を別名保存します。元の作品と既存出力は変更しません。JPEGは品質95で再エンコードします。Windows PowerShell 7.6が必要で、RARにはWinRAR/UnRARが必要です。仕様・注意点は[DOCS/MANGA_SPLIT.md](DOCS/MANGA_SPLIT.md)を参照してください。
