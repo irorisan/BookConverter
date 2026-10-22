@@ -98,6 +98,57 @@ try {
     & pwsh.exe -NoLogo -NoProfile -File $script $bad
     Ensure ($LASTEXITCODE -ne 0) 'image-free input should fail'
     Ensure (-not (Test-Path -LiteralPath (Join-Path $temp 'empty-images_裁断.cbz'))) 'bad input produced output'
+    # The final digit run must override numbers earlier in the file name,
+    # even if alphabetical / natural path sorting would reverse the pages.
+    $suffix=Join-Path $temp 'suffix first'
+    [void][IO.Directory]::CreateDirectory($suffix)
+    New-Image (Join-Path $suffix '13DL.me_Net_0002.png') 16 4 $false
+    New-Image (Join-Path $suffix '99DL.me_Net_0001.png') 16 4 $true
+    Copy-Item -LiteralPath (Join-Path $source 'ComicInfo.xml') -Destination $suffix
+    & pwsh.exe -NoLogo -NoProfile -File $script $suffix
+    Ensure ($LASTEXITCODE -eq 0) 'trailing page number should override earlier digits'
+    Test-Result (Join-Path $temp 'suffix first_裁断.cbz')
+
+    # Gaps are warned about, but splitting still succeeds.
+    $gaps=Join-Path $temp 'gaps'
+    [void][IO.Directory]::CreateDirectory($gaps)
+    New-Image (Join-Path $gaps '13DL.me_Net_0001.png') 16 4 $true
+    New-Image (Join-Path $gaps '13DL.me_Net_0004.png') 16 4 $false
+    Copy-Item -LiteralPath (Join-Path $source 'ComicInfo.xml') -Destination $gaps
+    $gapOutput=& pwsh.exe -NoLogo -NoProfile -File $script $gaps 2>&1 | Out-String
+    Ensure ($LASTEXITCODE -eq 0) 'gap should not prevent splitting'
+    Ensure ($gapOutput -match 'Missing page number') 'missing page number warning was not printed'
+    Test-Result (Join-Path $temp 'gaps_裁断.cbz')
+
+    # Normalized duplicate suffixes in distinct filenames cannot silently
+    # choose an arbitrary reading order.
+    $duplicate=Join-Path $temp 'duplicates'
+    [void][IO.Directory]::CreateDirectory($duplicate)
+    New-Image (Join-Path $duplicate '13DL.me_Net_0001.png') 16 4 $true
+    New-Image (Join-Path $duplicate 'different_1.png') 16 4 $false
+    & pwsh.exe -NoLogo -NoProfile -File $script $duplicate
+    Ensure ($LASTEXITCODE -ne 0) 'duplicate numeric suffixes must fail'
+    Ensure (-not (Test-Path -LiteralPath (Join-Path $temp 'duplicates_裁断.cbz'))) 'duplicate created an output'
+
+    # Mixed numbered/un-numbered pages are ambiguous and must be rejected.
+    $mixed=Join-Path $temp 'mixed numbered'
+    [void][IO.Directory]::CreateDirectory($mixed)
+    New-Image (Join-Path $mixed 'cover.png') 16 4 $true
+    New-Image (Join-Path $mixed '13DL.me_Net_0002.png') 16 4 $false
+    & pwsh.exe -NoLogo -NoProfile -File $script $mixed
+    Ensure ($LASTEXITCODE -ne 0) 'mixed numbered and unnumbered images must fail'
+    Ensure (-not (Test-Path -LiteralPath (Join-Path $temp 'mixed numbered_裁断.cbz'))) 'mixed suffixes created an output'
+
+    # A volume with no numeric suffixes still permits natural sort.
+    $unnumbered=Join-Path $temp 'unnumbered'
+    [void][IO.Directory]::CreateDirectory($unnumbered)
+    New-Image (Join-Path $unnumbered 'A_cover.png') 16 4 $true
+    New-Image (Join-Path $unnumbered 'B_spread.png') 16 4 $false
+    Copy-Item -LiteralPath (Join-Path $source 'ComicInfo.xml') -Destination $unnumbered
+    & pwsh.exe -NoLogo -NoProfile -File $script $unnumbered
+    Ensure ($LASTEXITCODE -eq 0) 'no suffixes should use natural-order fallback'
+    Test-Result (Join-Path $temp 'unnumbered_裁断.cbz')
+
     Write-Host 'MangaSplit synthetic smoke tests passed.'
 } finally {
     if(Test-Path -LiteralPath $temp){Remove-Item -LiteralPath $temp -Force -Recurse}
