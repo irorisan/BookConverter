@@ -15,12 +15,9 @@ $paths=@(
 $modes=@{
     Manga=@()
     Magazine=@('-Magazine')
-    GPU=@('-GPU')
-    MagazineGPU=@('-Magazine','-GPU')
-    Hybrid=@('-ConversionMode','Hybrid')
 }
 $main=Join-Path $root 'scripts/Convert-Manga.ps1'
-foreach($mode in @('Manga','Magazine','GPU','MagazineGPU','Hybrid')){
+foreach($mode in @('Manga','Magazine')){
     $plan=New-BookConverterTerminalLaunch -MainScript $main -PowerShellPath 'C:\Program Files\PowerShell\7\pwsh.exe' -Mode $mode -DroppedPaths $paths
     Assert-Eq $plan.FileName 'wt.exe' 'wt executable'
     Assert-Eq $plan.Arguments[0] '-w' 'must open a dedicated window'
@@ -46,14 +43,10 @@ foreach($mode in @('Manga','Magazine','GPU','MagazineGPU','Hybrid')){
         $receiverContent=@'
 param(
     [switch]$Magazine,
-    [switch]$GPU,
-    [ValidateSet('Legacy','GPU','Hybrid')][string]$ConversionMode='Legacy',
     [string[]]$DroppedPaths
 )
 [pscustomobject]@{
     Magazine=[bool]$Magazine
-    GPU=[bool]$GPU
-    ConversionMode=$ConversionMode
     Paths=@($DroppedPaths)
 } | ConvertTo-Json -Depth 8 -Compress
 '@
@@ -64,22 +57,21 @@ param(
         $actual=$actualJson | ConvertFrom-Json
         Assert-Eq $actual.Paths.Count $paths.Count "Input argument count differs for $mode"
         for($i=0;$i -lt $paths.Count;$i++){Assert-Eq $actual.Paths[$i] $paths[$i] "Dropped path $i was modified for $mode"}
-        Assert-Eq $actual.Magazine ($mode -in @('Magazine','MagazineGPU')) "Magazine mode mismatch for $mode"
-        Assert-Eq $actual.GPU ($mode -in @('GPU','MagazineGPU')) "GPU mode mismatch for $mode"
-        Assert-Eq $actual.ConversionMode $(if($mode -eq 'Hybrid'){'Hybrid'}else{'Legacy'}) "ConversionMode changed for $mode"
+        Assert-Eq $actual.Magazine ($mode -eq 'Magazine') "Magazine mode mismatch for $mode"
     }finally{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}
 }
 
-foreach($name in @('Convert-Manga.bat','Convert-Manga-Magazine.bat','Convert-Manga-GPU.bat',
-                   'Convert-Manga-Magazine-GPU.bat','Convert-Manga-Hybrid.bat')){
+foreach($name in @('Convert-Manga.bat','Convert-Manga-Magazine.bat')){
     $bat=Get-Content -LiteralPath (Join-Path $root $name) -Raw -Encoding utf8
     Assert ($bat.Contains('Start-BookConverter-Terminal.ps1')) "BAT does not hand off to Windows Terminal: $name"
     Assert ($bat.Contains('%*')) "BAT lost drag-and-drop arguments: $name"
     Assert ($bat.Contains('DisableDelayedExpansion')) "BAT delayed expansion may corrupt exclamation marks: $name"
+    $expectedMode=if($name -eq 'Convert-Manga-Magazine.bat'){'Magazine'}else{'Manga'}
+    Assert ($bat.Contains("-Mode $expectedMode")) "Incorrect manga/magazine launcher: $name"
 }
 $updater=Get-Content -LiteralPath (Join-Path $root 'Update-BookConverter.bat') -Raw
 Assert (-not $updater.Contains('Start-BookConverter-Terminal.ps1')) 'Updater must not be modified'
 $launcher=Get-Content -LiteralPath (Join-Path $root 'scripts/Start-BookConverter-Terminal.ps1') -Raw
 Assert ($launcher.Contains('Get-Command wt.exe')) 'Windows Terminal availability must be checked'
 Assert ($launcher.Contains('ProcessStartInfo')) 'Launch must use argument list and not CMD string interpolation'
-Write-Host 'PASS: all modes launched via WT with encoded literal paths and updater unaffected'
+Write-Host 'PASS: two Hybrid BATs launched via WT, literal paths and updater unaffected'

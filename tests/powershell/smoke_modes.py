@@ -1,4 +1,4 @@
-"""Windows PowerShell 7.6 acceptance tests for manga/magazine engine modes.
+"""Windows PowerShell 7.6 acceptance tests for Hybrid manga/magazine entry modes.
 
 BAT dispatch through WT is checked separately in test-terminal-launch.ps1.
 """

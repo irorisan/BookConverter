@@ -1,7 +1,7 @@
 #requires -Version 7.6
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet('Manga','Magazine','GPU','MagazineGPU','Hybrid')]
+    [ValidateSet('Manga','Magazine')]
     [string]$Mode,
     [Parameter(Position=0,ValueFromRemainingArguments=$true)]
     [string[]]$DroppedPaths

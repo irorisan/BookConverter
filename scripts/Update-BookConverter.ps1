@@ -33,9 +33,7 @@ try {
     $source = Join-Path $unpacked 'BookConverter-main'
     foreach ($mandatory in @(
         'Convert-Manga.bat',
-        'Convert-Manga-GPU.bat',
         'Convert-Manga-Magazine.bat',
-        'Convert-Manga-Magazine-GPU.bat',
         'Update-BookConverter.bat',
         'scripts\Convert-Manga.ps1',
         'scripts\GPU-Functions.ps1',

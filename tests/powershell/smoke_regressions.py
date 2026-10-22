@@ -32,7 +32,7 @@ def main() -> None:
         for name, color in zip(['1.png', '2.png', '10.png'], colors):
             (images / name).write_bytes(png(COLORS[color]))
         hashes = {p: sha256(p) for p in root.rglob('*') if p.is_file()}
-        text = run(f'"{spine}" "{cover}" "{unsafe}" "{images}"\n\nq\n', magazine=True)
+        text = run(f'"{spine}" "{cover}" "{unsafe}" "{images}"\n\nq\n', magazine=True, expected=1)
         assert '成功: 3 / 上限超過: 0 / スキップ: 0 / 失敗: 1' in text, text
         assert_pages(output(spine, 'spine.cbz'), ['001.png', '002.png'], [png(COLORS[c]) for c in ['blue', 'red']])
         assert_pages(output(cover, 'cover.cbz'), ['001.png', '002.png'], [png(COLORS[c]) for c in ['cover', 'green']])
@@ -54,23 +54,21 @@ def main() -> None:
         assert 'CBZ原本コピー' in text, text
         assert sha256(boundary) == digest == sha256(output(boundary))
 
-        # Over-limit pass-through AVIF folder exercises warning counts without an encoder.
+        # Hybrid never commits a >70MiB CBZ (including unchanged source AVIF).
         large = root / '大容量'
         large.mkdir()
         page = large / '001.avif'
         with page.open('wb') as stream:
             stream.truncate(70 * MIB + 1)
         digest = sha256(page)
-        text = run('\nq\n', large, magazine=True)
-        assert '成功: 0 / 上限超過: 1 / スキップ: 0 / 失敗: 0' in text, text
-        assert sha256(page) == digest
-        with zipfile.ZipFile(root / 'avif変換cbz' / '大容量.cbz') as z:
-            assert z.namelist() == ['001.avif']
-            assert z.infolist()[0].file_size == 70 * MIB + 1
+        text = run('\nq\n', large, magazine=True, expected=1)
+        assert '成功: 0 / 上限超過: 0 / スキップ: 0 / 失敗: 1' in text, text
+        assert sha256(page) == digest, 'Uncompressed AVIF input changed'
+        assert not (root / 'avif変換cbz' / '大容量.cbz').exists()
         for p, digest in hashes.items():
             assert sha256(p) == digest, p
         assert not list(root.rglob('.manga_*.tmp'))
-        print('PASS: EPUB spine/cover/refusal, natural order, Store, naming, exact 60MiB, 70MiB warning')
+        print('PASS: EPUB spine/cover/refusal, natural order, Store, naming, exact 60MiB, 70MiB refusal')
 
 
 if __name__ == '__main__':
