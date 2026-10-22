@@ -850,41 +850,11 @@ function Invoke-MangaBatch {
     Write-Host "`n====== AVIF自動容量調整 ======" -ForegroundColor Cyan
     Write-Host '元ファイルが60MiB以下: 変換なし（CBZならファイルをそのままコピー）'
     Write-Host '60MiB超: 代表12ページ・最大5回試算で68MiBを目安に品質を選択（上限70MiB）'
-    if ($GPU) {
-        # Fixed by benchmarking: one image per FFmpeg process, up to twelve.
-        $workers = 12
-        Write-Host 'NVENC GPUエンコード: preset p7 / yuv420p' -ForegroundColor Cyan
-        Write-Host 'GPU並列: 12プロセス × 1画像（固定）' -ForegroundColor Cyan
-        Write-Host 'GPU変換に失敗した場合、黙ってCPUへ切り替えません。元ファイルは保持します。'
-    }
-    else {
-        Write-Host 'AVIFエンコード速度: -s 6（従来どおり） / 元CBZは保持して avif変換cbz へ出力'
-        $logicalCores = [Environment]::ProcessorCount
-        $autoWorkers = [int][Math]::Max(1, [Math]::Min(8, [Math]::Floor($logicalCores / 2)))
-        Write-Host ''
-        Write-Host '====== AVIFの並列処理 ======' -ForegroundColor Cyan
-        Write-Host "CPU: $logicalCores 論理コア / 自動設定: $autoWorkers 枚同時"
-        while ($true) {
-            $workerInput = Read-MangaResponse "並列数 [1-16]（Enterで自動: $autoWorkers）"
-            if ($null -eq $workerInput) { return }
-            $workerInput = $workerInput.Trim()
-            if ($workerInput -eq '') { $workers = $autoWorkers; break }
-            $candidate = 0
-            if ([int]::TryParse($workerInput, [ref]$candidate) -and $candidate -ge 1 -and $candidate -le 16) {
-                $workers = $candidate
-                break
-            }
-            Write-Host '1～16の整数かEnterを入力してください。' -ForegroundColor Yellow
-        }
-
-    }
-    # Hybrid starts GPU-led quality probing without a separate workers prompt.
-    # Explicit CLI -CpuProbeWorkers 1..8 keeps independent CPU probing available.
+    $workers = $GpuWorkers
     $selectedCpuProbeWorkers = $CpuProbeWorkers
-    if ($ConversionMode -in @('GPU','Hybrid')) {
-        $workers=$GpuWorkers
-        Write-Host "Experimental $ConversionMode : GPU $GpuWorkers / CPU full-pass $(if ($ConversionMode -eq 'Hybrid') {$CpuWorkers} else {0}) / CPU quality-probe $selectedCpuProbeWorkers; logged CPU fallback enabled"
-    }
+    Write-Host 'Hybrid AVIF: NVENC preset p7 / yuv420p + avifenc -s 6 -j 1' -ForegroundColor Cyan
+    Write-Host "  GPU $GpuWorkers プロセス / CPU本変換 $CpuWorkers プロセス / CPU品質探索 $selectedCpuProbeWorkers"
+    Write-Host 'GPU障害時はCPUで再試行します。元ファイルは保持します。'
     $encoder = $null
     $decoder = $null
     # If both v100 and v100b are dropped together, both normalize to v100.cbz.
@@ -1076,11 +1046,9 @@ function Invoke-MangaBatch {
             if ($shouldCompress) {
                 if (@($entries | Where-Object { $_.NeedsConversion }).Count -gt 0) {
                     if ($null -eq $encoder) {
-                        $encoder = if ($GPU) { Find-FFmpegNvenc } else { Find-OrInstall-Avifenc }
-                        if ($ConversionMode -in @('GPU','Hybrid')) {
-                            $script:CpuEncoder=Find-OrInstall-Avifenc
-                            [void](Test-HybridAvifenc -Path $script:CpuEncoder)
-                        }
+                        $encoder = Find-FFmpegNvenc
+                        $script:CpuEncoder = Find-OrInstall-Avifenc
+                        [void](Test-HybridAvifenc -Path $script:CpuEncoder)
                     }
                     if ($null -eq $decoder -and @($entries | Where-Object {
                         $_.NeedsConversion -and $_.Extension -eq '.webp'
@@ -1094,9 +1062,7 @@ function Invoke-MangaBatch {
                     $entries = $auto.Entries
                     $converted = $auto.Converted
                     $winningQuality = $auto.Quality
-                    $formatLabel = if ($GPU) {
-                        "NVENC AVIF 品質尺度$winningQuality (CQ$(Convert-GpuQualityToCq -Quality $winningQuality))"
-                    } else { "AVIF 品質$winningQuality" }
+                    $formatLabel = "Hybrid AVIF GPU Q$winningQuality (CQ$(Convert-GpuQualityToCq -Quality $winningQuality)) / CPU q$script:HybridCpuQuality"
                     if (-not $auto.UnderLimit) {
                         Write-Warning ('70MiB以内に収まりませんでした: Q{0} / 約{1:N1} MiB' -f `
                             $winningQuality, ($auto.Bytes / 1MB))
@@ -1107,8 +1073,7 @@ function Invoke-MangaBatch {
                 }
             }
 
-            if ($ConversionMode -in @('GPU','Hybrid')) {
-                $verifyTimer=[Diagnostics.Stopwatch]::StartNew()
+            $verifyTimer=[Diagnostics.Stopwatch]::StartNew()
                 try {
                     $avifs=@($entries | Where-Object { [IO.Path]::GetExtension($_.SourcePath) -eq '.avif' })
                     $samples=[string[]]@(Select-AvifVerificationSamples -Entries $avifs)
@@ -1118,7 +1083,6 @@ function Invoke-MangaBatch {
                         Invoke-GpuVerifyAvifBatch -Paths $samples -FFmpeg $encoder -Workers 2 -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
                     }
                 } finally { $verifyTimer.Stop(); $stageTimes['AVIFデコード検証'] += $verifyTimer.Elapsed }
-            }
             Write-MangaStage -Name $outputName -Stage "CBZ書き込み"
             $writeTimer = [System.Diagnostics.Stopwatch]::StartNew()
             try { Write-MangaStoredZip -Path $tempCbz -Entries $entries }
@@ -1145,10 +1109,10 @@ function Invoke-MangaBatch {
             finally { $check.Dispose() }
 
             # 一時CBZは出力先と同じディレクトリに作成。既存ファイルを上書きしない。
-            if ($ConversionMode -in @('GPU','Hybrid') -and $shouldCompress -and ([IO.FileInfo]::new($tempCbz)).Length -gt $MaxTargetBytes) {
+            if ($shouldCompress -and ([IO.FileInfo]::new($tempCbz)).Length -gt $MaxTargetBytes) {
                 throw 'Final CBZ exceeds 70MiB; no output committed'
             }
-            if ($ConversionMode -in @('GPU','Hybrid') -and $CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'Conversion cancelled before commit' }
+            if ($CancelFile -and (Test-Path -LiteralPath $CancelFile)) { throw 'Conversion cancelled before commit' }
             [IO.File]::Move($tempCbz, $output)
             $reportStatus='Success'
             Write-Host "[OK] $outputName ($($images.Count)枚 / $formatLabel $converted 枚)" -ForegroundColor Green
@@ -1167,7 +1131,7 @@ function Invoke-MangaBatch {
         }
         catch {
             Write-Warning "FAIL: $($item.FullName) / $($_.Exception.Message)"
-            if ($ConversionMode -in @('GPU','Hybrid')) { $script:ExperimentFailed=$true }
+            $script:ExperimentFailed=$true
             $failed++
         }
         finally {
@@ -1183,12 +1147,11 @@ function Invoke-MangaBatch {
             finally {
                 $volumeTimer.Stop()
                 Write-MangaTimingReport -Name $outputName -Stages $stageTimes -Total $volumeTimer.Elapsed
-                if ($ConversionMode -in @('GPU','Hybrid')) {
-                    $stageSeconds=[ordered]@{}
+                $stageSeconds=[ordered]@{}
                     foreach ($key in $stageTimes.Keys) { $stageSeconds[$key]=$stageTimes[$key].TotalSeconds }
-                    $report=[ordered]@{ Mode=$ConversionMode; Status=$reportStatus; Input=$item.FullName;
+                    $report=[ordered]@{ Mode='Hybrid'; Status=$reportStatus; Input=$item.FullName;
                         Output=$output; TotalSeconds=$volumeTimer.Elapsed.TotalSeconds; FinalBytes=$finalBytes;
-                        GpuWorkers=$GpuWorkers; CpuWorkers=$(if ($ConversionMode -eq 'Hybrid') {$CpuWorkers} else {0}); CpuProbeWorkers=$selectedCpuProbeWorkers;
+                        GpuWorkers=$GpuWorkers; CpuWorkers=$CpuWorkers; CpuProbeWorkers=$selectedCpuProbeWorkers;
                         GpuQuality=$winningQuality; CpuQuality=$script:HybridCpuQuality;
                         SizeRetries=[Math]::Max(0,@($script:EncodePasses | Where-Object { $_.Phase -eq 'Full' }).Count-1);
                         Stages=$stageSeconds; Passes=@($script:EncodePasses.ToArray()) }
@@ -1202,7 +1165,6 @@ function Invoke-MangaBatch {
                     foreach ($pass in $script:EncodePasses) {
                         Write-Host ('  [{0}] GPU {1} / CPU {2} pages, {3:N2} pages/s, errors {4}, retries {5}' -f $pass.Phase,$pass.GpuPages,$pass.CpuPages,$pass.PagesPerSecond,$pass.Errors,$pass.Retries)
                     }
-                }
             }
             $completedItems++
             Write-MangaOverallProgress -Completed $completedItems -Total $Items.Count -Name $outputName
