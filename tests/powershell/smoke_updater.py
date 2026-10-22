@@ -37,6 +37,9 @@ def main() -> None:
         (destination / "tools" / "avifenc.exe").write_bytes(b"my avifenc binary")
         (destination / "my-notes.txt").write_text("leave this unchanged", encoding="utf-8")
         (destination / "README.md").write_text("OUTDATED", encoding="utf-8")
+        for old in ("Convert-Manga-GPU.bat", "Convert-Manga-Magazine-GPU.bat", "Convert-Manga-Hybrid.bat"):
+            (destination / old).write_text("OBSOLETE", encoding="utf-8")
+        (destination / "custom-user.bat").write_text("PRESERVE", encoding="utf-8")
         shutil.copy2(
             ROOT / "scripts" / "Update-BookConverter.ps1",
             destination / "scripts" / "Update-BookConverter.ps1",
@@ -66,11 +69,15 @@ def main() -> None:
         assert (destination / "scripts" / "Convert-Manga.ps1").is_file()
         assert (destination / "scripts" / "GPU-Functions.ps1").is_file()
         assert (destination / "Update-BookConverter.bat").is_file()
-        assert (destination / "Convert-Manga-GPU.bat").is_file()
+        assert (destination / "Convert-Manga.bat").is_file()
+        assert (destination / "Convert-Manga-Magazine.bat").is_file()
+        for old in ("Convert-Manga-GPU.bat", "Convert-Manga-Magazine-GPU.bat", "Convert-Manga-Hybrid.bat"):
+            assert not (destination / old).exists(), f"Retired BAT not removed: {old}"
+        assert (destination / "custom-user.bat").read_text(encoding="utf-8") == "PRESERVE"
         assert (destination / "tools" / "ffmpeg.exe").read_bytes() == b"my ffmpeg binary"
         assert (destination / "tools" / "avifenc.exe").read_bytes() == b"my avifenc binary"
         assert (destination / "my-notes.txt").read_text(encoding="utf-8") == "leave this unchanged"
-        print("PASS: offline main updater, tools/data retention, invalid archive protection")
+        print("PASS: offline main updater, retired BAT cleanup, tools/data retention, invalid archive protection")
 
 
 if __name__ == "__main__":
