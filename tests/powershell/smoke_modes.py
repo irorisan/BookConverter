@@ -68,9 +68,49 @@ def main() -> None:
         for p, expected_name in (
             (site10, "ドロヘドロ v10.cbz"),
             (doro18, "ドロヘドロ v18.cbz"),
-            (fullwidth03a, "ドロヘドロ v03a.cbz"),
+            (fullwidth03a, "ドロヘドロ v03.cbz"),
         ):
             assert sha256(out / expected_name) == originals[p], (expected_name, text)
+
+        # Manga batch normalization strips A/B split markers and trailing
+        # download-site tags without touching the source archives.
+        tagged_cases = [
+            ("TagStory v05A [DL-Raw.Se].cbz", "統一名 v05.cbz"),
+            ("TagStory v06B DL-Raw.Se.cbz", "統一名 v06.cbz"),
+            ("TagStory 第07巻A - DL-Raw.Se.cbz", "統一名 v07.cbz"),
+            ("TagStory 第08B巻 [DL-Raw.Se].cbz", "統一名 v08.cbz"),
+            ("TagStory vol.09ａ【DL-Raw.Se】.cbz", "統一名 v09.cbz"),
+            ("TagStory v10.DL-Raw.Se.cbz", "統一名 v10.cbz"),
+        ]
+        tagged = [(cbz(folder / name), expected) for name, expected in tagged_cases]
+        before = {p: sha256(p) for p, _ in tagged}
+        text = run_bat("Convert-Manga.bat", "統一名\\n\\nq\\n", *(p for p, _ in tagged))
+        assert "成功: 6 / 上限超過: 0 / スキップ: 0 / 失敗: 0" in text, text
+        for source, expected in tagged:
+            assert sha256(out / expected) == before[source], (source, expected, text)
+            assert sha256(source) == before[source], source
+
+        # A/B-only differences now collide by design; only the output is
+        # deduplicated. The two originals must remain unchanged.
+        split_a = cbz(folder / "TagStory v12A.cbz")
+        split_b = cbz(folder / "TagStory v12B.cbz")
+        unchanged = {p: sha256(p) for p in (split_a, split_b)}
+        text = run_bat("Convert-Manga.bat", "統一名\\n\\nq\\n", split_a, split_b)
+        assert "成功: 1 / 上限超過: 0 / スキップ: 1 / 失敗: 0" in text, text
+        assert (out / "統一名 v12.cbz").is_file(), text
+        assert all(sha256(p) == old for p, old in unchanged.items())
+
+        # Embedded site-looking text is part of the title, not a trailing tag.
+        embedded = cbz(folder / "DL-Raw.Se実験 v13.cbz")
+        text = run_bat("Convert-Manga.bat", "\\n\\nq\\n", embedded)
+        assert (out / "DL-Raw.Se実験 v13.cbz").is_file(), text
+
+        # The magazine BAT is unchanged even for tag- and suffix-like filenames.
+        magazine_tag = cbz(folder / "月刊誌 v14A [DL-Raw.Se].cbz")
+        digest = sha256(magazine_tag)
+        text = run_bat("Convert-Manga-Magazine.bat", "\\nq\\n", magazine_tag)
+        assert "シリーズの出力作品名" not in text, text
+        assert sha256(out / magazine_tag.name) == digest
 
         # Magazine mode leaves _10 untouched and does not reinterpret it as v10.
         text = run_bat("Convert-Manga-Magazine.bat", "\nq\n", site10)
