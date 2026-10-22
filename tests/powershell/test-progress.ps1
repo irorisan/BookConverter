@@ -34,6 +34,23 @@ Assert-Eq (Format-MangaElapsed -Duration ([TimeSpan]::FromMilliseconds(0))) '00:
 Assert-Eq (Format-MangaElapsed -Duration ([TimeSpan]::FromMilliseconds(83456))) '00:01:23.4' 'minute and tenths'
 Assert-Eq (Format-MangaElapsed -Duration ([TimeSpan]::FromMilliseconds(3661857))) '01:01:01.8' 'hours and tenths'
 Assert-Eq (Format-MangaElapsed -Duration ([TimeSpan]::FromHours(27))) '27:00:00.0' 'duration over 24 hours'
+# Pure formatting: counts, percent, measured throughput and elapsed (no ETA).
+$measured=Format-MangaProgressStatus -Activity 'AVIF本変換' -Completed 120 -Total 243 -Unit '枚' -ElapsedSeconds 7.55 -Width 140
+foreach($part in @('AVIF本変換','120 / 243 枚','49%','15.89 枚/s','00:00:07.5')){
+    if(-not $measured.Contains($part)){throw "Missing measured task progress: $part in $measured"}
+}
+$quality=Format-MangaProgressStatus -Activity 'GPU品質探索' -Completed 3 -Total 5 -Unit '試行' -ElapsedSeconds 4 -Width 140
+foreach($part in @('3 / 5 試行','60%','0.75 試行/s','00:00:04.0')){
+    if(-not $quality.Contains($part)){throw "Quality progress missing $part"}
+}
+$zero=Format-MangaProgressStatus -Activity 'CPU校正' -Completed 0 -Total 3 -Unit '試行' -ElapsedSeconds 0 -Width 140
+if(-not ($zero.Contains('0%') -and $zero.Contains('速度 -') -and $zero.Contains('00:00:00.0'))){throw 'Unmeasured rate must be dash and start at zero'}
+$short=Format-MangaProgressStatus -Activity 'AVIF本変換' -Completed 120 -Total 243 -Unit '枚' -ElapsedSeconds 7.55 -Width 38
+if(-not ($short.Contains('120 / 243') -and $short.Contains('49%'))){throw 'Narrow progress must preserve count and percentage'}
+if($short.Contains('15.89') -or $short.Contains('00:00:07.5')){throw 'Narrow progress must omit auxiliary metrics'}
+$clamped=Format-MangaProgressStatus -Activity 'CPU校正' -Completed 10 -Total 3 -Unit '試行' -ElapsedSeconds 1 -Width 120
+if(-not ($clamped.Contains('3 / 3') -and $clamped.Contains('100%'))){throw 'Completed count must be clamped'}
+
 
 $script:progressCalls = [System.Collections.Generic.List[object]]::new()
 function Write-Progress {
@@ -58,6 +75,10 @@ Assert-Eq $script:progressCalls[0].ParentId 1 'page parent ID'
 Assert-Eq $script:progressCalls[0].Id 2 'page ID'
 Assert-Eq $script:progressCalls[0].PercentComplete 0 'page start percent'
 Assert-Eq $script:progressCalls[1].PercentComplete 30 'page completed percent'
+Assert-Eq $script:progressCalls[1].Status.Contains('%') $true 'task status percent'
+Assert-Eq $script:progressCalls[1].Status.Contains('枚/s') $true 'task status measured throughput'
+Assert-Eq $script:progressCalls[1].Status.Contains('経過') $true 'task status elapsed time'
+
 Assert-Eq $script:progressCalls[2].Completed $true 'page progress completed'
 Assert-Eq $script:progressCalls[1].Activity 'BookConverter / 現在のタスク進捗' 'current task activity'
 Assert-Eq $script:progressCalls[1].Status.Contains('AVIF本変換') $true 'current stage in status'
@@ -94,6 +115,8 @@ Assert-Eq $script:progressCalls[0].Id 1 'overall id'
 Assert-Eq $script:progressCalls[0].Activity 'BookConverter / 全体のタスク進捗' 'overall task activity'
 
 Assert-Eq $script:progressCalls[0].PercentComplete 25 'overall progress'
+if(-not ($script:progressCalls[0].Status.Contains('25%') -and $script:progressCalls[0].Status.Contains('経過'))){throw 'Overall status must show percent and batch elapsed'}
+
 if (-not $script:progressCalls[0].Status.Contains('作品 v02.cbz')) { throw 'output name missing in overall status' }
 Write-MangaOverallProgress -Completed 4 -Total 4 -Done
 Assert-Eq $script:progressCalls.Count 2 'completion call'
