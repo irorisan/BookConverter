@@ -220,66 +220,70 @@ function Find-WinRAR {
     throw 'WinRAR.exeが見つかりません。通常のインストール先かPATHを確認してください。'
 }
 
-function Find-OrInstall-Avifenc {
-    $candidates = @(
-        (Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\avifenc.exe'),
-        (Join-Path (Split-Path -Parent $PSScriptRoot) 'avifenc.exe')
-    )
+# Both CPU AVIF tools are distributed in AOMedia's official Windows release.
+# Keep their shared DLLs alongside the executables; never silently skip checks.
+function Find-OrInstall-LibavifTool {
+    param([Parameter(Mandatory=$true)][ValidateSet('avifenc','avifdec')][string]$Tool)
+    $exeName=$Tool+'.exe'
+    $root=Split-Path -Parent $PSScriptRoot
+    $candidates=@((Join-Path $root ('tools\'+$exeName)),(Join-Path $root $exeName))
+    if ($script:CpuEncoder) { $candidates += Join-Path (Split-Path -Parent $script:CpuEncoder) $exeName }
     foreach ($candidate in $candidates) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
     }
+    $cmd=Get-Command $exeName -CommandType Application -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
 
-    $command = Get-Command 'avifenc.exe' -CommandType Application -ErrorAction SilentlyContinue
-    if ($command) { return $command.Source }
-
-    $apiUrl = 'https://api.github.com/repos/AOMediaCodec/libavif/releases/latest'
-    $releasePage = 'https://github.com/AOMediaCodec/libavif/releases'
-    $toolsDir = Join-Path (Split-Path -Parent $PSScriptRoot) 'tools'
-    $target = Join-Path $toolsDir 'avifenc.exe'
-    $downloadDir = Join-Path ([IO.Path]::GetTempPath()) ('AvifencSetup_' + [Guid]::NewGuid().ToString('N'))
+    $apiUrl='https://api.github.com/repos/AOMediaCodec/libavif/releases/latest'
+    $releasePage='https://github.com/AOMediaCodec/libavif/releases'
+    $toolsDir=Join-Path $root 'tools'
+    $target=Join-Path $toolsDir $exeName
+    $downloadDir=Join-Path ([IO.Path]::GetTempPath()) ('LibavifSetup_'+[Guid]::NewGuid().ToString('N'))
     try {
-        Write-Host "`navifenc.exeがないため、AOMedia公式libavifの最新Windows x64版を取得します。" -ForegroundColor Cyan
-        New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
+        Write-Host ("`n{0}がないため、AOMedia公式libavif Windows x64版を取得します。" -f $exeName) -ForegroundColor Cyan
+        [void](New-Item -ItemType Directory -Path $downloadDir -Force)
         [Net.ServicePointManager]::SecurityProtocol =
             [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-        $headers = @{ 'User-Agent' = 'Convert-Manga' }
-        $release = Invoke-RestMethod -Headers $headers -Uri $apiUrl -TimeoutSec 120
-        if ($null -eq $release -or $null -eq $release.assets) {
-            throw 'GitHub APIからリリース情報を取得できませんでした'
+        $headers=@{'User-Agent'='Convert-Manga'}
+        $release=Invoke-RestMethod -Headers $headers -Uri $apiUrl -TimeoutSec 120
+        if ($null -eq $release -or $null -eq $release.assets) { throw 'GitHub APIからリリース情報を取得できませんでした' }
+        $asset=@($release.assets | Where-Object {$_.name -eq 'windows-artifacts.zip'} | Select-Object -First 1)
+        if ($asset.Count -eq 0) { throw '最新リリースに公式windows-artifacts.zipが見つかりません' }
+        $archive=Join-Path $downloadDir 'windows-artifacts.zip'
+        Invoke-WebRequest -Headers $headers -Uri $asset[0].browser_download_url -OutFile $archive -UseBasicParsing -TimeoutSec 300
+        $extract=Join-Path $downloadDir 'extracted'
+        Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+        $requestedExe=Get-ChildItem -LiteralPath $extract -Filter $exeName -Recurse -File | Select-Object -First 1
+        if (-not $requestedExe) { throw ("取得したZIP内に{0}が見つかりません" -f $exeName) }
+        [void](New-Item -ItemType Directory -Path $toolsDir -Force)
+        foreach ($toolName in @('avifenc.exe','avifdec.exe')) {
+            $candidate=Join-Path $requestedExe.DirectoryName $toolName
+            $destination=Join-Path $toolsDir $toolName
+            if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and
+                -not (Test-Path -LiteralPath $destination -PathType Leaf)) {
+                Copy-Item -LiteralPath $candidate -Destination $destination -ErrorAction Stop
+            }
         }
-        # libavif公式はwindows-artifacts.zipという名前で配布している。
-        $asset = @($release.assets | Where-Object {
-            $_.name -eq 'windows-artifacts.zip'
-        } | Select-Object -First 1)
-        if ($asset.Count -eq 0) {
-            throw '最新リリースに公式のwindows-artifacts.zipが見つかりません'
+        # Keep paired DLLs next to the downloaded binary. Do not overwrite
+        # any preexisting installation while adding a missing command.
+        Get-ChildItem -LiteralPath $requestedExe.DirectoryName -Filter '*.dll' -File | ForEach-Object {
+            $destination=Join-Path $toolsDir $_.Name
+            if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
+                Copy-Item -LiteralPath $_.FullName -Destination $destination -ErrorAction Stop
+            }
         }
-        $archivePath = Join-Path $downloadDir $asset[0].name
-        Invoke-WebRequest -Headers $headers -Uri $asset[0].browser_download_url -OutFile $archivePath -UseBasicParsing -TimeoutSec 300
-
-        $extractDir = Join-Path $downloadDir 'extracted'
-        Expand-Archive -LiteralPath $archivePath -DestinationPath $extractDir -Force
-        $exe = Get-ChildItem -LiteralPath $extractDir -Filter 'avifenc.exe' -Recurse -File |
-            Select-Object -First 1
-        if ($null -eq $exe) { throw '取得したZIP内にavifenc.exeが見つかりません' }
-
-        New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
-        Copy-Item -LiteralPath $exe.FullName -Destination $target -Force
-        Get-ChildItem -LiteralPath $exe.DirectoryName -Filter '*.dll' -File | ForEach-Object {
-            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $toolsDir $_.Name) -Force
-        }
-        Write-Host "avifenc.exeを配置しました: $target" -ForegroundColor Green
+        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "$exeName の配置に失敗しました" }
+        Write-Host ("{0}を配置しました: {1}" -f $exeName,$target) -ForegroundColor Green
         return $target
     }
     catch {
-        throw ('avifenc.exeの自動導入に失敗しました: ' + $_.Exception.Message +
-            "`n公式リリース: $releasePage" +
-            "`nリリースZIPからavifenc.exeを取り出し、tools\avifenc.exe に手動配置して再実行してください。")
+        throw ("{0}の自動導入に失敗しました: {1}`n公式リリース: {2}`n配布ZIPからtools/{0}に手動配置して再実行してください。" -f $exeName,$_.Exception.Message,$releasePage)
     }
-    finally {
-        Remove-Item -LiteralPath $downloadDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    finally { Remove-Item -LiteralPath $downloadDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
+
+function Find-OrInstall-Avifenc { return Find-OrInstall-LibavifTool -Tool avifenc }
+function Find-OrInstall-Avifdec { return Find-OrInstall-LibavifTool -Tool avifdec }
 
 # Google公式のWebPデコーダー。既存CBZ内に.webpがある場合だけ導入する。
 # dwebpはWebPをPNGへ展開し、そのPNGをavifencへ渡すためだけに使用する。
@@ -1113,10 +1117,10 @@ function Invoke-MangaBatch {
                         $samples=[string[]]@(Select-AvifVerificationSamples -Entries $avifs)
                     }
                     if ($samples.Count -gt 0) {
-                        if (-not $encoder) { $encoder=Find-FFmpegNvenc }
-                        Write-Host ('  AVIFサンプル検証: {0}/{1} 枚' -f $samples.Count,$avifs.Count) -ForegroundColor DarkCyan
-                        $failedAvifs=[string[]]@(Invoke-GpuVerifyAvifBatch -Paths $samples -FFmpeg $encoder -Workers 2 `
-                            -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds -ReturnFailedPaths)
+                        $cpuAvifDecoder=Find-OrInstall-Avifdec
+                        Write-Host ('  CPU AVIFサンプル検証: {0}/{1} 枚 (libavif)' -f $samples.Count,$avifs.Count) -ForegroundColor DarkCyan
+                        $failedAvifs=[string[]]@(Invoke-CpuVerifyAvifSamples -Paths $samples -Avifdec $cpuAvifDecoder `
+                            -ScratchDir $workDir -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds -ReturnFailedPaths)
                         if ($failedAvifs.Count -gt 0) {
                             # Save the failing encoded files before the temporary workspace is cleaned.
                             $metricsDir=if ($ReportDirectory) { $ReportDirectory } else { Join-Path $destinationDir 'metrics' }
@@ -1134,8 +1138,8 @@ function Invoke-MangaBatch {
                                 -StageTimes $stageTimes -CpuProbe)
                             $cpuPaths=[string[]]@($cpuEntries | ForEach-Object { [string]$_.SourcePath })
                             # Refuse to commit if CPU outputs are also undecodable.
-                            Invoke-GpuVerifyAvifBatch -Paths $cpuPaths -FFmpeg $encoder -Workers 2 `
-                                -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
+                            Invoke-CpuVerifyAvifSamples -Paths $cpuPaths -Avifdec $cpuAvifDecoder `
+                                -ScratchDir $workDir -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
                             for ($i=0; $i -lt $plan.Count; $i++) {
                                 $target=$entries[[int]$plan[$i].Index]
                                 $target.SourcePath=$cpuEntries[$i].SourcePath
