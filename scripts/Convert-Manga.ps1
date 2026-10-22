@@ -1076,7 +1076,11 @@ function Invoke-MangaBatch {
             $verifyTimer=[Diagnostics.Stopwatch]::StartNew()
                 try {
                     $avifs=@($entries | Where-Object { [IO.Path]::GetExtension($_.SourcePath) -eq '.avif' })
-                    $samples=[string[]]@(Select-AvifVerificationSamples -Entries $avifs)
+                    $samples=[string[]]@()
+                    # Only decoder-verify new encoder output, not unmodified source AVIF.
+                    if ($converted -gt 0 -and $avifs.Count -gt 0) {
+                        $samples=[string[]]@(Select-AvifVerificationSamples -Entries $avifs)
+                    }
                     if ($samples.Count -gt 0) {
                         if (-not $encoder) { $encoder=Find-FFmpegNvenc }
                         Write-Host ('  AVIFサンプル検証: {0}/{1} 枚' -f $samples.Count,$avifs.Count) -ForegroundColor DarkCyan
