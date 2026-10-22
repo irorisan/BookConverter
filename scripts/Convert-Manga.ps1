@@ -4,7 +4,7 @@ param(
     [ValidateSet('Legacy','GPU','Hybrid')][string]$ConversionMode='Legacy',
     [ValidateRange(1,12)][int]$GpuWorkers=12,
     [ValidateRange(1,4)][int]$CpuWorkers=4,
-    [ValidateRange(0,8)][Nullable[int]]$CpuProbeWorkers,
+    [ValidateRange(0,8)][int]$CpuProbeWorkers=0,
     [string]$ReportDirectory,
     [string]$CancelFile,
     [ValidateRange(1,86400)][int]$EncoderTimeoutSeconds=300,
@@ -1028,11 +1028,9 @@ function Invoke-MangaBatch {
         }
 
     }
-    $selectedCpuProbeWorkers = 0
-    if ($ConversionMode -eq 'Hybrid') {
-        $selectedCpuProbeWorkers = Select-CpuProbeWorkers -Requested $CpuProbeWorkers -Interactive:(-not [Console]::IsInputRedirected)
-        if ($null -eq $selectedCpuProbeWorkers) { return }
-    }
+    # Hybrid starts GPU-led quality probing without a separate workers prompt.
+    # Explicit CLI -CpuProbeWorkers 1..8 keeps independent CPU probing available.
+    $selectedCpuProbeWorkers = $CpuProbeWorkers
     if ($ConversionMode -in @('GPU','Hybrid')) {
         $workers=$GpuWorkers
         Write-Host "Experimental $ConversionMode : GPU $GpuWorkers / CPU full-pass $(if ($ConversionMode -eq 'Hybrid') {$CpuWorkers} else {0}) / CPU quality-probe $selectedCpuProbeWorkers; logged CPU fallback enabled"
