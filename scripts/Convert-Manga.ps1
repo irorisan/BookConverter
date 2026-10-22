@@ -1,7 +1,5 @@
 #requires -Version 7.6
 param(
-    [switch]$GPU,
-    [ValidateSet('Legacy','GPU','Hybrid')][string]$ConversionMode='Legacy',
     [ValidateRange(1,12)][int]$GpuWorkers=12,
     [ValidateRange(1,4)][int]$CpuWorkers=4,
     [ValidateRange(0,8)][int]$CpuProbeWorkers=0,
@@ -17,7 +15,6 @@ $ErrorActionPreference = 'Stop'
 if (-not $IsWindows -or $PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) {
     throw 'BookConverter requires PowerShell 7.6.x on Windows (pwsh.exe).'
 }
-if ($ConversionMode -in @('GPU','Hybrid')) { $GPU = $true }
 $script:ExperimentFailed=$false
 $script:CpuEncoder = $null
 $script:HybridCpuQuality = 95
@@ -36,7 +33,7 @@ $OutputFolderName = 'avif変換cbz'
 Initialize-MangaProgress
 . (Join-Path $PSScriptRoot 'Convert-Manga-Banner.ps1')
 $startupKind = if ($Magazine) { 'MAGAZINE' } else { 'MANGA' }
-$startupEngine = if ($ConversionMode -eq 'Hybrid') { 'HYBRID' } elseif ($GPU) { 'GPU' } else { 'CPU' }
+$startupEngine = 'HYBRID'
 Write-MangaStartupBanner -Kind $startupKind -Engine $startupEngine
 . (Join-Path $PSScriptRoot 'Convert-Manga-Input.ps1')
 . (Join-Path $PSScriptRoot 'Convert-Manga-Zip.ps1')
@@ -373,161 +370,31 @@ function Invoke-ParallelAvif {
         [string]::IsNullOrWhiteSpace($Decoder)) {
         throw 'WebP画像の入力にはdwebp.exeが必要です'
     }
-    if ($ConversionMode -in @('GPU','Hybrid')) {
-        $g = $GpuWorkers
-        $c = if ($ConversionMode -eq 'Hybrid' -and $FullPass) { $CpuWorkers } else { 0 }
-        $cpuQ = $script:HybridCpuQuality
-        if ($CpuProbe) { $g=0; $c=$CpuWorkers; $cpuQ=$Quality }
-        if ($GpuOnly) { $g=$GpuWorkers; $c=0 }
-        $encodeTimer = [Diagnostics.Stopwatch]::StartNew()
-        try {
-            $pass = Invoke-HybridEncode -Entries $pending -FFmpeg $Encoder -Avifenc $script:CpuEncoder `
-                -Decoder $Decoder -GpuQuality $Quality -CpuQuality $cpuQ -GpuWorkers $g -CpuWorkers $c `
-                -TempDir $TempDir -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds -TrackProgress:$FullPass
+    $g = $GpuWorkers
+    $c = if ($FullPass) { $CpuWorkers } else { 0 }
+    $cpuQ = $script:HybridCpuQuality
+    if ($CpuProbe) { $g=0; $c=$CpuWorkers; $cpuQ=$Quality }
+    if ($GpuOnly) { $g=$GpuWorkers; $c=0 }
+    $encodeTimer = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $pass = Invoke-HybridEncode -Entries $pending -FFmpeg $Encoder -Avifenc $script:CpuEncoder `
+            -Decoder $Decoder -GpuQuality $Quality -CpuQuality $cpuQ -GpuWorkers $g -CpuWorkers $c `
+            -TempDir $TempDir -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds -TrackProgress:$FullPass
+        $pass | Add-Member -NotePropertyName Phase -NotePropertyValue $(if ($FullPass) {'Full'} else {'Sample'})
+        $script:EncodePasses.Add($pass)
+    } catch {
+        if ($_.Exception.Data.Contains('HybridMetrics')) {
+            $pass=[pscustomobject]$_.Exception.Data['HybridMetrics']
             $pass | Add-Member -NotePropertyName Phase -NotePropertyValue $(if ($FullPass) {'Full'} else {'Sample'})
             $script:EncodePasses.Add($pass)
-        } catch {
-            if ($_.Exception.Data.Contains('HybridMetrics')) {
-                $pass=[pscustomobject]$_.Exception.Data['HybridMetrics']
-                $pass | Add-Member -NotePropertyName Phase -NotePropertyValue $(if ($FullPass) {'Full'} else {'Sample'})
-                $script:EncodePasses.Add($pass)
-            }
-            throw
-        } finally {
-            $encodeTimer.Stop()
-            if ($null -ne $StageTimes) { $StageTimes['AVIF本変換'] += $encodeTimer.Elapsed }
         }
-        # Each output has already passed the encoder exit-code and AVIF header checks.
-        # Sample candidates are size probes only. All final AVIFs, including reused
-        # samples, are fully decoded in Invoke-MangaBatch before the CBZ is saved.
-        return $pending.Count
-    }
-    New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
-
-    $running = [System.Collections.Generic.List[object]]::new()
-    $gpuVerifyPaths = [System.Collections.Generic.List[string]]::new()
-    $next = 0
-    $finished = 0
-    $activity = "AVIF並列変換: $OutputName"
-    if ($FullPass) { Write-MangaPageProgress -Completed 0 -Total $pending.Count -Activity $activity -Workers $Workers }
-
-    $encodeTimer = [System.Diagnostics.Stopwatch]::StartNew()
-    try {
-        while ($finished -lt $pending.Count) {
-            while ($running.Count -lt $Workers -and $next -lt $pending.Count) {
-                $entry = $pending[$next]
-                $asciiBase = 'image_{0:D6}' -f ($next + 1)
-                $staged = Join-Path $TempDir ($asciiBase + $entry.Extension)
-                $destination = Join-Path $TempDir ($asciiBase + '.avif')
-                $pngIntermediate = $null
-
-                # dwebp / avifencのUnicodeパス問題を回避するため、一時名はASCIIにする。
-                Copy-Item -LiteralPath $entry.SourcePath -Destination $staged -Force
-                $process = $null
-                try {
-                    $avifInput = $staged
-                    if ($entry.Extension -eq '.webp') {
-                        $pngIntermediate = Join-Path $TempDir ($asciiBase + '.png')
-                        # WebPからPNGへ可逆展開してからAVIFに圧縮する。
-                        & $Decoder -quiet $staged -o $pngIntermediate | Out-Null
-                        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $pngIntermediate -PathType Leaf)) {
-                            throw "dwebp.exeによるWebP展開に失敗しました: $($entry.EntryName)"
-                        }
-                        $avifInput = $pngIntermediate
-                    }
-
-                    $info = New-Object System.Diagnostics.ProcessStartInfo
-                    $info.FileName = $Encoder
-                    if ($GPU) {
-                        $info.Arguments = Get-GpuEncodeArguments -Quality $Quality -InputPath $avifInput -OutputPath $destination
-                    }
-                    else {
-                        $info.Arguments = '-q {0} -s 6 -j 1 "{1}" "{2}"' -f $Quality, $avifInput, $destination
-                    }
-                    $info.UseShellExecute = $false
-                    $info.CreateNoWindow = $true
-                    $process = New-Object System.Diagnostics.Process
-                    $process.StartInfo = $info
-                    if (-not $process.Start()) {
-                        throw "avifenc.exeを起動できません: $($entry.EntryName)"
-                    }
-                    $running.Add([pscustomobject]@{
-                        Process     = $process
-                        Entry       = $entry
-                        Staged      = $staged
-                        Intermediate= $pngIntermediate
-                        Destination = $destination
-                    })
-                    $process = $null
-                }
-                catch {
-                    if ($null -ne $process) {
-                        try {
-                            if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
-                        }
-                        catch { }
-                        $process.Dispose()
-                    }
-                    Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
-                    if ($null -ne $pngIntermediate) {
-                        Remove-Item -LiteralPath $pngIntermediate -Force -ErrorAction SilentlyContinue
-                    }
-                    throw
-                }
-                $next++
-            }
-
-            $gotResult = $false
-            for ($i = $running.Count - 1; $i -ge 0; $i--) {
-                $job = $running[$i]
-                if (-not $job.Process.HasExited) { continue }
-                $gotResult = $true
-                $code = $job.Process.ExitCode
-                $job.Process.Dispose()
-                $running.RemoveAt($i)
-                if ($code -ne 0) {
-                    throw "avifenc.exeでの変換に失敗しました（終了コード: $code）: $($job.Entry.EntryName)"
-                }
-                Test-AvifOutput -Path $job.Destination
-                if ($GPU) { $gpuVerifyPaths.Add($job.Destination) }
-                $job.Entry.SourcePath = $job.Destination
-                $job.Entry.Length = [long](Get-Item -LiteralPath $job.Destination).Length
-                Remove-Item -LiteralPath $job.Staged -Force
-                if ($null -ne $job.Intermediate) {
-                    Remove-Item -LiteralPath $job.Intermediate -Force
-                }
-                $finished++
-                if ($FullPass) { Write-MangaPageProgress -Completed $finished -Total $pending.Count -Activity $activity -Workers $Workers }
-            }
-            if (-not $gotResult) { Start-Sleep -Milliseconds $(if ($GPU) { 20 } else { 120 }) }
-        }
-    }
-    finally {
-        foreach ($job in $running) {
-            try {
-                if (-not $job.Process.HasExited) {
-                    $job.Process.Kill()
-                    $job.Process.WaitForExit()
-                }
-            }
-            catch { }
-            finally { $job.Process.Dispose() }
-        }
-        if ($FullPass) { Write-MangaPageProgress -Activity $activity -Done }
+        throw
+    } finally {
         $encodeTimer.Stop()
         if ($null -ne $StageTimes) { $StageTimes['AVIF本変換'] += $encodeTimer.Elapsed }
     }
-    if ($GPU) {
-        $verifyTimer = [System.Diagnostics.Stopwatch]::StartNew()
-        try {
-            Invoke-GpuVerifyAvifBatch -Paths $gpuVerifyPaths.ToArray() -FFmpeg $Encoder -Workers ([Math]::Min(8, $Workers))
-        }
-        finally {
-            $verifyTimer.Stop()
-            if ($null -ne $StageTimes) { $StageTimes['AVIFデコード検証'] += $verifyTimer.Elapsed }
-        }
-    }
-    return $finished
+    # Validated by the Hybrid encoder; selected pages are decoded before save.
+    return $pending.Count
 }
 
 # 圧縮せずそのまま使うかを判定。CBZなどは元アーカイブのサイズ、
