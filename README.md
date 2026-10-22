@@ -1,13 +1,13 @@
 # BookConverter — 漫画と雑誌の専用BAT・AVIF/CBZ変換
 
-Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-Manga.bat`、雑誌・単巻は `Convert-Manga-Magazine.bat`** にフォルダ / ZIP / CBZ / RAR / EPUBをドラッグ＆ドロップします。 **変換BATを実行するとWindows Terminalの新しいウィンドウでPowerShell 7.6が開きます。** Windows Terminal（`wt.exe`エイリアス）と`pwsh.exe`が必要で、Windows Terminalが見つからない場合は起動を中止して案内します。BAT起動時のCMDウィンドウは一瞬表示されることがあります。複数ファイル・日本語パスも同じ操作で投入でき、従来の漫画/雑誌/CPU/GPU/Hybridのモード設定は維持します。アップデーターBATは変更しません。元データは削除せず、入力元の親に **`avif変換cbz`** を作成して結果を保存します。
+Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-Manga.bat`、雑誌・単巻は `Convert-Manga-Magazine.bat`** にフォルダ / ZIP / CBZ / RAR / EPUBをドラッグ＆ドロップします。 **変換BATを実行するとWindows Terminalの新しいウィンドウでPowerShell 7.6が開きます。** Windows Terminal（`wt.exe`エイリアス）と`pwsh.exe`が必要で、Windows Terminalが見つからない場合は起動を中止して案内します。BAT起動時のCMDウィンドウは一瞬表示されることがあります。複数ファイル・日本語パスも同じ操作で投入でき、漫画／雑誌いずれもHybrid（GPU12＋CPU4）で動作します。旧CPU版・GPU単独版は廃止します。アップデーターBATは変更しません。元データは削除せず、入力元の親に **`avif変換cbz`** を作成して結果を保存します。
 
 ## プロジェクトについて
 
 - **実装はPowerShell 7.6（Windows / .NET 10）とBAT**。Tauri/Rustへの移行は行いません。
 - **起動時には青系レトロなBookConverterのANSIアート**を1回表示します。色・幅に対応しないコンソール、出力リダイレクト時はシンプルな2行表示に切り替え、進捗バーや変換ログの処理には影響しません。
 - CUIは2段バー「全体のタスク進捗」（巻数）と「現在のタスク進捗」（品質探索・CPU校正の完了試行数、AVIF本変換の完了ページ数）を表示します。 バーの補足には**進捗率（%）、実際の完了数、実測処理速度（枚/sまたは試行/s）、経過時間**を表示します。長い表示や狭い端末では主要な数値を優先して省略し、配色やバーの形は従来のままです。CPU探索0のGPU主体校正は通常q40を下限とし、70MiB超過時のみq30まで再調整します。
-- CUIには全巻の進捗、現在工程、AVIFエンコード枚数と終了集計、**変換所要時間（HH:MM:SS.1桁）**を表示します。さらに、各巻の終了時に入力準備・展開・品質探索・本変換・AVIF検証・CBZ作成/検証などの**工程別所要時間**を表示します。時間はシリーズ名・CPU版の並列数入力後から完了集計まで（解凍・品質探索・CBZ保存・検証を含む）を測定します。変換後は同じCUIで次の作品のパス入力を待ち、`q` / `exit` で終了します。
+- CUIには全巻の進捗、現在工程、AVIFエンコード枚数と終了集計、**変換所要時間（HH:MM:SS.1桁）**を表示します。さらに、各巻の終了時に入力準備・展開・品質探索・本変換・AVIF検証・CBZ作成/検証などの**工程別所要時間**を表示します。時間はシリーズ名・漫画の作品名入力後から完了集計まで（解凍・品質探索・CBZ保存・検証を含む）を測定します。変換後は同じCUIで次の作品のパス入力を待ち、`q` / `exit` で終了します。
 - GitHubには第三者の `avifenc.exe` バイナリを含めていません。必要な場合は従来の自動取得、または `tools\avifenc.exe` への配置を利用してください。
 - 開発計画は [DOCS/DEVELOPMENT_PLAN.md](DOCS/DEVELOPMENT_PLAN.md) を参照してください。
 
@@ -37,10 +37,8 @@ Windows向けの漫画・雑誌CBZ変換ツールです。**漫画は `Convert-M
 ```text
 BookConverter/
 ├── Convert-Manga.bat
-├── Convert-Manga-GPU.bat
-├── Convert-Manga-Magazine.bat
-├── Convert-Manga-Magazine-GPU.bat
-├── Update-BookConverter.bat
+├── ├── Convert-Manga-Magazine.bat
+├── ├── Update-BookConverter.bat
 ├── scripts/
 │   ├── Convert-Manga.ps1
 │   ├── Convert-Manga-Epub.ps1
@@ -129,7 +127,7 @@ Weekly_Ascii_2026-10-20.epub → Weekly_Ascii_2026-10-20.cbz
 - **60MiB以下**の元CBZはAVIF変換せず **そのままコピー**（画像の内容・画質を変更しません）。ZIP / RAR / EPUB / フォルダ入力では、無変換でCBZへ詰め直します（EPUBはページを連番化）。
 - **60MiB超**の巻は、**70MiB以内で最高品質**を目指してAVIF品質を自動選択します。従来の「60MiBに近い品質を選ぶ」処理は廃止しました。
 - 入力名 `作品名 v100b.cbz`、`v100b.cbz`（シリーズフォルダ内）、`作品名 v03a.cbz`、`作品名+100b巻.zip`、`v100b` フォルダ（シリーズフォルダ内）など、**英字の枝番**を認識します。**出力時には末尾の `b` / `B` だけを取り除きます**（例：`v100b` → `v100`）。`a` などほかの枝番は維持します。
-- 画像単位の **AVIF並列変換**に対応（デフォルトは論理CPU数の半分、最大8並列、手動1〜16）。
+- 画像単位の**Hybrid AVIF並列変換**に対応（GPU12・CPU4プロセス）。
 - 既存のWebPをAVIFにする場合は、一度 `dwebp.exe` でPNGへ可逆展開します。**WebPでの出力機能はありません。**
 
 ## 使い方
@@ -137,9 +135,9 @@ Weekly_Ascii_2026-10-20.epub → Weekly_Ascii_2026-10-20.cbz
 1. ZIPを展開して `BookConverter/` のBATを起動します。PowerShellファイルは `scripts/` にまとめて配置します。`tools/` に外部エンコーダーを置きます。
 2. 漫画は `Convert-Manga.bat`、雑誌は `Convert-Manga-Magazine.bat` を選び、EPUB・CBZ・ZIP・RARや巻フォルダをドラッグ＆ドロップします（複数可）。引数なし起動の場合は待機プロンプトに絶対パスを貼り付けてEnter。空白を含む複数パスはそれぞれダブルクォートで囲みます。
 3. **漫画BATでは巻数の有無にかかわらず作品名を1回入力**。Enterなら最初の検出名を採用。**雑誌BATでは名前入力なし**で元名を保持します。
-4. **並列数**を入力。Enterなら自動設定です。
+4. **Hybridの並列数入力はありません**（GPU12・CPU4を既定で使用）。
 5. 自動的に元の容量を判定し、必要な場合だけAVIFへ変換します。
-6. 結果集計後、同じモードで次の作品のパスを入力してEnter。漫画の作品名と並列数はバッチごとに指定します。空行・無効パスは再入力できます。終了は待機中に `q` / `exit`。
+6. 結果集計後、同じモードで次の作品のパスを入力してEnter。漫画の作品名はバッチごとに指定します。空行・無効パスは再入力できます。終了は待機中に `q` / `exit`。
 
 コンソールへのドロップは対応ホストでパスを挿入してEnterで確定します。Windows Terminal / Console Hostの実際のドロップ動作は未確認です。対応しない場合も「パスのコピー」→貼り付けを利用できます。多数ファイルは親フォルダを指定してください。
 
@@ -192,5 +190,5 @@ ONE PIECE/
 - 数値表記は「MiB」（1MiB = 1,048,576バイト）です。Windowsのファイル容量表示に近い単位です。
 - **WinRAR・avifenc・dwebpを使うWindows実機E2Eは未検証**です。CIではPowerShell 7.6のBAT連続変換・小型CBZのSHA-256・EPUB/spine・自然順・命名・容量境界を検証します。実機ドロップも未確認です。[実機の確認手順](DOCS/PHASE3_4_CONTINUOUS.md) に従い、初めに少数ページ・1巻で確認してください。
 GPU12＋CPU4の実験は [設計・測定手順](DOCS/HYBRID_AVIF.md) を参照。
-`Convert-Manga-Hybrid.bat`（漫画）または `scripts/Convert-Manga.ps1 -ConversionMode Hybrid`
+Hybridは両方の標準BATから直接起動します。`scripts/Convert-Manga.ps1`は既定Hybridで、必要なら`-CpuProbeWorkers 1..8`を指定してCPU独立探索を比較できます。既定0はGPU主体＋最大3枚CPU校正、CPU本変換は既定4プロセスです。詳細は[設計・測定手順](DOCS/HYBRID_AVIF.md)。
 で明示起動する。比較用は `-ConversionMode GPU`。HybridのCPU品質探索は**入力質問なし・既定0（GPU主体）**です。必要に応じて引数 `-CpuProbeWorkers 1..8` でCPU独立探索の並列数を指定可能。**0はGPU主体モード**となり、GPU探索後にCPUの最大3代表ページを短時間校正して本変換へ再利用します。容量超過時はCPU/GPUの変更が必要なページだけ再エンコードします。CPU本変換の既定4並列は維持します。対話BAT・自動実行・パイプ入力はいずれも既定0です。詳しくは[設計・測定手順](DOCS/HYBRID_AVIF.md)。既存BATの既定動作は変わらない。
