@@ -33,8 +33,8 @@ $tokens=$null; $errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'scripts/Convert-Manga.ps1'),[ref]$tokens,[ref]$errors)
 if ($errors) { throw $errors[0] }
 $batchNode=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-MangaBatch'},$true)
-$finalVerify=@($batchNode.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-GpuVerifyAvifBatch'},$true))
-if ($finalVerify.Count -eq 0) { throw 'Final per-volume AVIF decode validation must be retained' }
+$finalVerify=@($batchNode.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-CpuVerifyAvifSamples'},$true))
+if ($finalVerify.Count -eq 0) { throw 'Final per-volume CPU libavif validation must be retained' }
 $sampleCommands=@($batchNode.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Select-AvifVerificationSamples'},$true))
 if ($sampleCommands.Count -ne 1) { throw 'Final validation must use sample selection' }
 $parallelNode=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-ParallelAvif'},$true)
