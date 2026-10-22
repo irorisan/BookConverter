@@ -48,7 +48,8 @@ function Get-VolumeInfo {
 
     # Only strip a trailing, delimited download-site tag. Do not rewrite
     # work titles, source filenames, paths or unrelated middle substrings.
-    $siteTagPattern = '(?i)(?:[\s._-]+DL-Raw\.Se|[\[【(（]\s*DL-Raw\.Se\s*[\]】)）])\s*
+    $siteTagPattern = '(?i)(?:[\s._-]+DL-Raw\.Se|[\[【(（]\s*DL-Raw\.Se\s*[\]】)）])\s*$'
+    $BaseName = [regex]::Replace($BaseName.Trim(), $siteTagPattern, '').Trim()
     # Allow both traditional volume names (15巻 / v15 / vol.15) and
     # bracketed numbers such as （１５） / (15) / 作品名（１５）.
     # Preserve the title exactly; normalize only the detected volume number.
