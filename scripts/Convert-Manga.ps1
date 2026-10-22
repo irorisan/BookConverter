@@ -409,7 +409,7 @@ function Invoke-ParallelAvif {
     $next = 0
     $finished = 0
     $activity = "AVIF並列変換: $OutputName"
-    Write-MangaPageProgress -Completed 0 -Total $pending.Count -Activity $activity -Workers $Workers
+    if ($FullPass) { Write-MangaPageProgress -Completed 0 -Total $pending.Count -Activity $activity -Workers $Workers }
 
     $encodeTimer = [System.Diagnostics.Stopwatch]::StartNew()
     try {
@@ -497,7 +497,7 @@ function Invoke-ParallelAvif {
                     Remove-Item -LiteralPath $job.Intermediate -Force
                 }
                 $finished++
-                Write-MangaPageProgress -Completed $finished -Total $pending.Count -Activity $activity -Workers $Workers
+                if ($FullPass) { Write-MangaPageProgress -Completed $finished -Total $pending.Count -Activity $activity -Workers $Workers }
             }
             if (-not $gotResult) { Start-Sleep -Milliseconds $(if ($GPU) { 20 } else { 120 }) }
         }
@@ -513,7 +513,7 @@ function Invoke-ParallelAvif {
             catch { }
             finally { $job.Process.Dispose() }
         }
-        Write-MangaPageProgress -Activity $activity -Done
+        if ($FullPass) { Write-MangaPageProgress -Activity $activity -Done }
         $encodeTimer.Stop()
         if ($null -ne $StageTimes) { $StageTimes['AVIF本変換'] += $encodeTimer.Elapsed }
     }
