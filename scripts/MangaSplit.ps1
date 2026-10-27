@@ -75,56 +75,72 @@ function Expand-Manga([IO.FileSystemInfo]$item, [string]$destination) {
 function Test-SideMarginColumn(
     [Drawing.Bitmap]$image, [Drawing.Rectangle]$rect, [int]$x
 ) {
-    # Sampling the full height (up to 64 rows) avoids treating a white panel
-    # as empty unless its entire outer vertical stripe is blank.
-    $samples=[Math]::Min(64,$rect.Height)
+    # Sample the full height (up to 128 rows). Up to 5% of the samples may be
+    # nombre marks, dust or JPEG noise; anything more is treated as artwork.
+    $samples=[Math]::Min(128,$rect.Height)
     if($samples -lt 3){return $false}
-    $white=$true
-    $black=$true
+    $allowed=[int][Math]::Floor($samples*0.05)
+    $notWhite=0
+    $notBlack=0
     for($i=0;$i -lt $samples;$i++){
         $y=$rect.Y+[int][Math]::Floor(($i*($rect.Height-1))/($samples-1))
         $color=$image.GetPixel($x,$y)
         if($color.A -lt 16){continue}
-        $neutral=([Math]::Max($color.R,[Math]::Max($color.G,$color.B)) -
-                  [Math]::Min($color.R,[Math]::Min($color.G,$color.B))) -le 18
-        $nearWhite=($neutral -and $color.R -ge 230 -and
-                    $color.G -ge 230 -and $color.B -ge 230)
-        $nearBlack=($color.R -le 26 -and $color.G -le 26 -and $color.B -le 26)
-        if(-not $nearWhite){$white=$false}
-        if(-not $nearBlack){$black=$false}
-        if(-not $white -and -not $black){return $false}
+        $max=[Math]::Max($color.R,[Math]::Max($color.G,$color.B))
+        $min=[Math]::Min($color.R,[Math]::Min($color.G,$color.B))
+        # Near white tolerates yellowed paper and dull scans.
+        if($min -lt 210 -or ($max-$min) -gt 36){$notWhite++}
+        if($max -gt 40){$notBlack++}
+        if($notWhite -gt $allowed -and $notBlack -gt $allowed){return $false}
     }
-    return ($white -or $black)
+    return ($notWhite -le $allowed -or $notBlack -le $allowed)
+}
+
+function Get-SideMarginWidth(
+    [Drawing.Bitmap]$image, [Drawing.Rectangle]$selection, [bool]$fromLeft, [int]$maxTrim
+) {
+    # Returns the blank width from one edge, or -1 when it exceeds $maxTrim.
+    $origin=if($fromLeft){$selection.X}else{$selection.Right-1}
+    $step=if($fromLeft){1}else{-1}
+    # A scanner edge line or shadow within 2% of the edge may precede the margin.
+    $edgeLimit=[int][Math]::Floor($selection.Width*0.02)
+    $start=0
+    while($start -le $edgeLimit -and
+          -not (Test-SideMarginColumn $image $selection ($origin+$step*$start))){
+        $start++
+    }
+    if($start -gt $edgeLimit){return 0}
+    $width=$start
+    while($width -le $maxTrim -and
+          (Test-SideMarginColumn $image $selection ($origin+$step*$width))){
+        $width++
+    }
+    if($width -gt $maxTrim){return -1}
+    # Behind an edge line, require a real margin (1% of the width) to trim it.
+    $minimum=[Math]::Max(1,[int][Math]::Floor($selection.Width*0.01))
+    if($start -gt 0 -and ($width-$start) -lt $minimum){return 0}
+    return $width
 }
 
 function Get-TrimmedPageRectangle(
     [Drawing.Bitmap]$image, [Drawing.Rectangle]$selection, [int]$pageNumber
 ) {
-    $maxTrim=[int][Math]::Floor($selection.Width*0.30)
+    $maxTrim=[int][Math]::Floor($selection.Width*0.45)
     if($maxTrim -lt 1){return $selection}
-    $left=0
-    while($left -le $maxTrim -and
-          (Test-SideMarginColumn $image $selection ($selection.X+$left))){
-        $left++
-    }
-    if($left -gt $maxTrim){
-        Write-Warning ("Page {0}: left blank exceeds 30%; keeping original edge." -f $pageNumber)
-        $left=0
-    }
-    $right=0
-    while($right -le $maxTrim -and
-          (Test-SideMarginColumn $image $selection ($selection.Right-1-$right))){
-        $right++
-    }
-    if($right -gt $maxTrim){
-        Write-Warning ("Page {0}: right blank exceeds 30%; keeping original edge." -f $pageNumber)
-        $right=0
+    $trim=@{}
+    foreach($side in @('left','right')){
+        $width=Get-SideMarginWidth $image $selection ($side -eq 'left') $maxTrim
+        if($width -lt 0){
+            Write-Warning ("Page {0}: {1} blank exceeds 45%; keeping original edge." -f $pageNumber,$side)
+            $width=0
+        }
+        $trim[$side]=$width
     }
     # Leave a 2-pixel cushion near artwork in full-resolution manga.
     $padding=if($selection.Width -ge 100){2}else{0}
-    $left=[Math]::Max(0,$left-$padding)
-    $right=[Math]::Max(0,$right-$padding)
-    if($left+$right -ge $selection.Width/2) {
+    $left=[Math]::Max(0,$trim.left-$padding)
+    $right=[Math]::Max(0,$trim.right-$padding)
+    if(($selection.Width-$left-$right) -lt $selection.Width*0.40) {
         Write-Warning ("Page {0}: uncertain blank area; keeping original width." -f $pageNumber)
         return $selection
     }
