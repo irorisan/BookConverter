@@ -33,6 +33,59 @@ function Write-Source([string]$folder,[int]$margin,[string]$ext) {
         } finally {$b.Dispose()}
     }
 }
+function Write-Scanned([string]$folder) {
+    # Off-white paper, nombre marks in the outer margins and gray scanner edges.
+    [void][IO.Directory]::CreateDirectory($folder)
+    $paper=[Drawing.Color]::FromArgb(236,229,212)
+    function Shape($color,[int]$x,[int]$y,[int]$w,[int]$h) {
+        [pscustomobject]@{Color=$color; Rect=[Drawing.Rectangle]::new($x,$y,$w,$h)}
+    }
+    $shapes=@(
+        ,@(Shape ([Drawing.Color]::Lime) 125 0 150 200)
+        ,@(
+            (Shape ([Drawing.Color]::Gray) 0 0 2 200),
+            (Shape ([Drawing.Color]::Gray) 398 0 2 200),
+            (Shape ([Drawing.Color]::Red) 50 0 150 200),
+            (Shape ([Drawing.Color]::Blue) 200 0 150 200),
+            (Shape ([Drawing.Color]::Black) 20 185 8 5),
+            (Shape ([Drawing.Color]::Black) 372 185 8 5)
+        )
+    )
+    for($page=1;$page -le 2;$page++){
+        $b=[Drawing.Bitmap]::new(400,200)
+        try {
+            $g=[Drawing.Graphics]::FromImage($b)
+            try {
+                $g.Clear($paper)
+                foreach($shape in $shapes[$page-1]){
+                    $brush=[Drawing.SolidBrush]::new($shape.Color)
+                    try { $g.FillRectangle($brush,$shape.Rect) }
+                    finally { $brush.Dispose() }
+                }
+            } finally {$g.Dispose()}
+            $b.Save((Join-Path $folder ('{0:D4}.png' -f $page)),[Drawing.Imaging.ImageFormat]::Png)
+        } finally {$b.Dispose()}
+    }
+}
+function Write-Blank([string]$folder) {
+    [void][IO.Directory]::CreateDirectory($folder)
+    foreach($page in @(1,2)){
+        $b=[Drawing.Bitmap]::new(64,20)
+        try {
+            $g=[Drawing.Graphics]::FromImage($b)
+            try { $g.Clear([Drawing.Color]::White) } finally {$g.Dispose()}
+            $b.Save((Join-Path $folder ('{0:D4}.png' -f $page)),[Drawing.Imaging.ImageFormat]::Png)
+        } finally {$b.Dispose()}
+    }
+}
+function Get-Widths([string]$path) {
+    $out=Join-Path $temp ([guid]::NewGuid().ToString('N'))
+    [IO.Compression.ZipFile]::ExtractToDirectory($path,$out)
+    foreach($file in @(Get-ChildItem -LiteralPath $out -File -Filter '*.png' | Sort-Object Name)){
+        $b=[Drawing.Bitmap]::new($file.FullName)
+        try { $b.Width } finally {$b.Dispose()}
+    }
+}
 function Check([string]$path,[int[]]$widths,[bool]$jpeg) {
     $out=Join-Path $temp ([guid]::NewGuid().ToString('N'))
     [IO.Compression.ZipFile]::ExtractToDirectory($path,$out)
@@ -70,13 +123,28 @@ try{
     Assert ($LASTEXITCODE -eq 0) 'JPEG processing failed'
     Check (Join-Path $temp 'jpeg-margins_裁断.cbz') @(24,24,24) $true
 
-    $extreme=Join-Path $temp 'over35'
-    Write-Source $extreme 14 'png'
-    & pwsh.exe -NoLogo -NoProfile -File $split $extreme
-    Assert ($LASTEXITCODE -eq 0) 'extreme margin should remain untrimmed'
-    # Outside a 30% safety cap, leave those page images at half-width.
-    Check (Join-Path $temp 'over35_裁断.cbz') @(18,32,32) $false
-    Write-Host 'PASS: 25% alternating left/right margins, centered cover, JPEG, skip unsafe trims.'
+    $wide=Join-Path $temp 'wide44'
+    Write-Source $wide 14 'png'
+    & pwsh.exe -NoLogo -NoProfile -File $split $wide
+    Assert ($LASTEXITCODE -eq 0) 'wide margin processing failed'
+    # 14px of a 32px half-page (about 44%) is still under the 45% cap.
+    Check (Join-Path $temp 'wide44_裁断.cbz') @(18,18,18) $false
+
+    $blank=Join-Path $temp 'blank'
+    Write-Blank $blank
+    & pwsh.exe -NoLogo -NoProfile -File $split $blank
+    Assert ($LASTEXITCODE -eq 0) 'blank page processing failed'
+    $widths=@(Get-Widths (Join-Path $temp 'blank_裁断.cbz'))
+    Assert (($widths -join ',') -eq '32,32,32') "blank pages must keep their width: $($widths -join ',')"
+
+    $scanned=Join-Path $temp 'scanned'
+    Write-Scanned $scanned
+    & pwsh.exe -NoLogo -NoProfile -File $split $scanned
+    Assert ($LASTEXITCODE -eq 0) 'scanned margin processing failed'
+    # Content 150px plus the 2px safety cushion on each trimmed side.
+    $widths=@(Get-Widths (Join-Path $temp 'scanned_裁断.cbz'))
+    Assert (($widths -join ',') -eq '154,152,152') "scanned outer margins not trimmed: $($widths -join ',')"
+    Write-Host 'PASS: alternating outer margins, centered cover, JPEG, wide margins, blank pages, nombre/paper tint/scan edges.'
 } finally {
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 }
