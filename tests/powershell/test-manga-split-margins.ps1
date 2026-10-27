@@ -37,15 +37,18 @@ function Write-Scanned([string]$folder) {
     # Off-white paper, nombre marks in the outer margins and gray scanner edges.
     [void][IO.Directory]::CreateDirectory($folder)
     $paper=[Drawing.Color]::FromArgb(236,229,212)
+    function Shape($color,[int]$x,[int]$y,[int]$w,[int]$h) {
+        [pscustomobject]@{Color=$color; Rect=[Drawing.Rectangle]::new($x,$y,$w,$h)}
+    }
     $shapes=@(
-        @(@([Drawing.Color]::Lime,125,0,150,200)),
-        @(
-            @([Drawing.Color]::Gray,0,0,2,200),
-            @([Drawing.Color]::Gray,398,0,2,200),
-            @([Drawing.Color]::Red,50,0,150,200),
-            @([Drawing.Color]::Blue,200,0,150,200),
-            @([Drawing.Color]::Black,20,185,8,5),
-            @([Drawing.Color]::Black,372,185,8,5)
+        ,@(Shape ([Drawing.Color]::Lime) 125 0 150 200)
+        ,@(
+            (Shape ([Drawing.Color]::Gray) 0 0 2 200),
+            (Shape ([Drawing.Color]::Gray) 398 0 2 200),
+            (Shape ([Drawing.Color]::Red) 50 0 150 200),
+            (Shape ([Drawing.Color]::Blue) 200 0 150 200),
+            (Shape ([Drawing.Color]::Black) 20 185 8 5),
+            (Shape ([Drawing.Color]::Black) 372 185 8 5)
         )
     )
     for($page=1;$page -le 2;$page++){
@@ -55,8 +58,8 @@ function Write-Scanned([string]$folder) {
             try {
                 $g.Clear($paper)
                 foreach($shape in $shapes[$page-1]){
-                    $brush=[Drawing.SolidBrush]::new($shape[0])
-                    try { $g.FillRectangle($brush,$shape[1],$shape[2],$shape[3],$shape[4]) }
+                    $brush=[Drawing.SolidBrush]::new($shape.Color)
+                    try { $g.FillRectangle($brush,$shape.Rect) }
                     finally { $brush.Dispose() }
                 }
             } finally {$g.Dispose()}
