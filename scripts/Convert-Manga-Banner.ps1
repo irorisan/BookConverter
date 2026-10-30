@@ -74,7 +74,8 @@ function Get-MangaStartupBannerLines {
 function Write-MangaStartupBanner {
     param(
         [ValidateSet('MANGA','MAGAZINE')][string]$Kind = 'MANGA',
-        [ValidateSet('CPU','GPU','HYBRID')][string]$Engine = 'CPU'
+        [ValidateSet('CPU','GPU','HYBRID')][string]$Engine = 'CPU',
+        [ValidateSet('AVIF','WebP')][string]$EncodingFormat = 'AVIF'
     )
 
     $width = 80
@@ -99,7 +100,7 @@ function Write-MangaStartupBanner {
 
     foreach ($line in @(Get-MangaStartupBannerLines -Width $width -EnableAnsi:$enabled `
             -ModeLabel "$Kind / $Engine")) {
-        Write-Host $line
+        Write-Host ($line.Replace('AVIF', $EncodingFormat))
     }
     Write-Host ''
 }

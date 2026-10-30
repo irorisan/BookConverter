@@ -1,5 +1,6 @@
 #requires -Version 7.6
 param(
+    [ValidateSet('AVIF','WebP')][string]$EncodingFormat,
     [ValidateRange(1,12)][int]$GpuWorkers=12,
     [ValidateRange(1,4)][int]$CpuWorkers=4,
     [ValidateRange(0,8)][int]$CpuProbeWorkers=0,
@@ -32,11 +33,14 @@ $OutputFolderName = 'avif変換cbz'
 . (Join-Path $PSScriptRoot 'Convert-Manga-Progress.ps1')
 Initialize-MangaProgress
 . (Join-Path $PSScriptRoot 'Convert-Manga-Banner.ps1')
-$startupKind = if ($Magazine) { 'MAGAZINE' } else { 'MANGA' }
-$startupEngine = 'HYBRID'
-Write-MangaStartupBanner -Kind $startupKind -Engine $startupEngine
 . (Join-Path $PSScriptRoot 'Convert-Manga-Input.ps1')
+if (-not $EncodingFormat) { $EncodingFormat = Read-MangaEncodingFormat }
+if ($EncodingFormat -eq 'WebP') { $OutputFolderName = 'webp変換cbz' }
+$startupKind = if ($Magazine) { 'MAGAZINE' } else { 'MANGA' }
+$startupEngine = if ($EncodingFormat -eq 'WebP') { 'CPU' } else { 'HYBRID' }
+Write-MangaStartupBanner -Kind $startupKind -Engine $startupEngine -EncodingFormat $EncodingFormat
 . (Join-Path $PSScriptRoot 'Convert-Manga-Zip.ps1')
+. (Join-Path $PSScriptRoot 'WebP-Functions.ps1')
 # PowerShell 1MB means 1MiB (1,048,576 bytes).
 $CopyThresholdBytes = [long](60 * 1MB)
 $MaxTargetBytes = [long](70 * 1MB)
@@ -119,7 +123,7 @@ function Add-MangaItem {
     param([System.IO.FileSystemInfo]$InputItem, [string]$ParentTitle = '')
 
     # 二重変換防止: 出力先のAVIF済みCBZを再入力対象にしない。
-    if (-not $InputItem.PSIsContainer -and $InputItem.Directory.Name -eq $OutputFolderName) {
+    if (-not $InputItem.PSIsContainer -and $InputItem.Directory.Name -in @('avif変換cbz','webp変換cbz')) {
         return $false
     }
 
@@ -175,8 +179,8 @@ function Add-MangaItem {
 function Scan-Container {
     param([System.IO.DirectoryInfo]$Container)
 
-    if ($Container.Name -eq $OutputFolderName) {
-        Write-Warning 'AVIF変換後の出力フォルダは入力対象から除外します。'
+    if ($Container.Name -in @('avif変換cbz','webp変換cbz')) {
+        Write-Warning '変換後の出力フォルダは入力対象から除外します。'
         return
     }
 
@@ -186,7 +190,7 @@ function Scan-Container {
     # Otherwise, treat it as a manga library or a series folder.
     $children = @(Get-ChildItem -LiteralPath $Container.FullName -Force)
     foreach ($child in $children) {
-        if ($child.PSIsContainer -and $child.Name -eq $OutputFolderName) { continue }
+        if ($child.PSIsContainer -and $child.Name -in @('avif変換cbz','webp変換cbz')) { continue }
         if (-not $child.PSIsContainer -and
             $child.Extension.ToLowerInvariant() -notin $ArchiveExtensions) {
             continue
@@ -199,7 +203,7 @@ function Scan-Container {
         # One more level: 漫画/シリーズ名/50巻, etc.
         if ($child.PSIsContainer) {
             foreach ($grandchild in @(Get-ChildItem -LiteralPath $child.FullName -Force)) {
-                if ($grandchild.PSIsContainer -and $grandchild.Name -eq $OutputFolderName) { continue }
+                if ($grandchild.PSIsContainer -and $grandchild.Name -in @('avif変換cbz','webp変換cbz')) { continue }
                 if (-not $grandchild.PSIsContainer -and
                     $grandchild.Extension.ToLowerInvariant() -notin $ArchiveExtensions) {
                     continue
@@ -410,6 +414,19 @@ function Invoke-ParallelAvif {
 
     $pending = @($Entries | Where-Object { $_.NeedsConversion })
     if ($pending.Count -eq 0) { return 0 }
+    if ($EncodingFormat -eq 'WebP') {
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $count = Invoke-WebPEncode -Entries $pending -Encoder $Encoder -Quality $Quality -Workers $Workers `
+            -TempDir $TempDir -OutputName $OutputName -StageTimes $StageTimes -TrackProgress:$FullPass `
+            -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
+        $timer.Stop()
+        $script:EncodePasses.Add([pscustomobject]@{
+            Phase=$(if ($FullPass) {'Full'} else {'Sample'}); GpuPages=0; CpuPages=$count
+            GpuQuality=0; CpuQuality=$Quality; Errors=0; Retries=0; Seconds=$timer.Elapsed.TotalSeconds
+            PagesPerSecond=$count / [Math]::Max(0.001, $timer.Elapsed.TotalSeconds)
+        })
+        return $count
+    }
     if (@($pending | Where-Object { $_.Extension -eq '.webp' }).Count -gt 0 -and
         [string]::IsNullOrWhiteSpace($Decoder)) {
         throw 'WebP画像の入力にはdwebp.exeが必要です'
@@ -640,6 +657,10 @@ function Invoke-AutoSizeAvif {
     $qualityTimer = [System.Diagnostics.Stopwatch]::StartNew()
     $calibration = $null
     try {
+        if ($EncodingFormat -eq 'WebP') {
+            $qualityChoice = Find-AvifQuality -Entries $Entries -Encoder $Encoder -Workers $Workers `
+                -ScratchDir $ScratchDir -VolumeName $OutputName -SampleLimitBytes $sampleLimit
+        } else {
         $parallel = Invoke-HybridQualitySearch -Entries $Entries -Encoder $Encoder -CpuEncoder $script:CpuEncoder `
                 -Decoder $Decoder -GpuWorkers $GpuWorkers -CpuProbeWorkers $CpuProbeWorkers `
                 -ScratchDir $ScratchDir -VolumeName $OutputName -SampleLimitBytes $sampleLimit `
@@ -655,6 +676,7 @@ function Invoke-AutoSizeAvif {
                 $script:HybridCpuQuality = $parallel.CpuChoice.Quality
                 Write-Host "  Concurrent qualities: GPU CQ$(Convert-GpuQualityToCq $qualityChoice.Quality), CPU q$($script:HybridCpuQuality) ($CpuProbeWorkers workers)"
             }
+        }
     }
     finally {
         $qualityTimer.Stop()
@@ -662,7 +684,7 @@ function Invoke-AutoSizeAvif {
         if ($null -ne $StageTimes) { $StageTimes['品質探索'] += $qualityTimer.Elapsed }
     }
     $quality = $qualityChoice.Quality
-    if ($CpuProbeWorkers -eq 0) {
+    if ($EncodingFormat -ne 'WebP' -and $CpuProbeWorkers -eq 0) {
         return Invoke-GpuLedHybridConversion -Entries $Entries -GpuProbe $qualityChoice.Probe `
             -Calibration $calibration -Encoder $Encoder -Decoder $Decoder -GpuQuality $quality `
             -ScratchDir $ScratchDir -OutputName $OutputName -MaxImageBytes $maxImageBytes `
@@ -695,14 +717,14 @@ function Invoke-AutoSizeAvif {
         }
 
         $trialDir = Join-Path $ScratchDir ('full_q' + $quality)
-        Write-MangaStage -Name $OutputName -Stage "AVIF全ページ変換（$attempt / 3回, Q$quality）"
+        Write-MangaStage -Name $OutputName -Stage "${EncodingFormat}全ページ変換（$attempt / 3回, Q$quality）"
         Write-Host "  全ページ変換（$attempt / 最大3回）: 品質$quality / テスト画像再利用 $reusedCount 枚" -ForegroundColor Cyan
         [void](Invoke-ParallelAvif -Entries $trialEntries -Encoder $Encoder -Decoder $Decoder `
             -Quality $quality -Workers $Workers -TempDir $trialDir -OutputName $OutputName `
             -StageTimes $StageTimes -FullPass)
         $actualBytes = [long]0
         foreach ($entry in $trialEntries) { $actualBytes += [long]$entry.Length }
-        Write-Host ('  AVIF画像の合計容量: {0:N1} MiB（Q{1}）' -f ($actualBytes / 1MB), $quality)
+        Write-Host ('  {0}画像の合計容量: {1:N1} MiB（Q{2}）' -f $EncodingFormat, ($actualBytes / 1MB), $quality)
 
         if ($actualBytes -le $maxImageBytes) {
             if ($null -ne $bestOversizeEntries) {
@@ -768,13 +790,15 @@ function Invoke-AutoSizeAvif {
         if ($nextQuality -ge $quality) { $nextQuality = [int][Math]::Max(30, $quality - 1) }
         if ($nextQuality -eq $quality) { break }
         $quality = $nextQuality
-        $script:HybridCpuQuality=[Math]::Max(30,$script:HybridCpuQuality-5)
-        Write-Warning "CPU own quality reduced to $script:HybridCpuQuality for size retry"
+        if ($EncodingFormat -ne 'WebP') {
+            $script:HybridCpuQuality=[Math]::Max(30,$script:HybridCpuQuality-5)
+            Write-Warning "CPU own quality reduced to $script:HybridCpuQuality for size retry"
+        }
         $selectedProbe = $nextProbe
         Write-Warning ('70MiB超過。追加の品質テストは行わず、Q{0}で再試行します。' -f $quality)
     }
 
-    throw 'Hybrid conversion exceeded 70MiB after size retries; no output committed'
+    throw 'Conversion exceeded 70MiB after size retries; no output committed'
 }
 
 function Get-VolumeLabel {
@@ -891,14 +915,20 @@ function Invoke-MangaBatch {
     }
 
     # 60MiB以下の巻は無変換。超える巻は70MiB以下で最高品質を目指す。
-    Write-Host "`n====== AVIF自動容量調整 ======" -ForegroundColor Cyan
-    Write-Host '元ファイルが60MiB以下: 変換なし（CBZならファイルをそのままコピー）'
-    Write-Host '60MiB超: 代表12ページ・最大5回試算で68MiBを目安に品質を選択（上限70MiB）'
+    Write-Host "`n====== ${EncodingFormat}自動容量調整 ======" -ForegroundColor Cyan
+    if ($EncodingFormat -eq 'WebP') { Write-Host '全ページをCPU WebP変換（60MiB以下・既存AVIFも対象）' }
+    else { Write-Host '元ファイルが60MiB以下: 変換なし（CBZならファイルをそのままコピー）' }
+    Write-Host '代表12ページ・最大5回試算で68MiBを目安に品質を選択（上限70MiB）'
     $workers = $GpuWorkers
     $selectedCpuProbeWorkers = $CpuProbeWorkers
-    Write-Host 'Hybrid AVIF: NVENC preset p7 / yuv420p + avifenc -s 6 -j 1' -ForegroundColor Cyan
-    Write-Host "  GPU $GpuWorkers プロセス / CPU本変換 $CpuWorkers プロセス / CPU品質探索 $selectedCpuProbeWorkers"
-    Write-Host 'GPU障害時はCPUで再試行します。元ファイルは保持します。'
+    if ($EncodingFormat -eq 'WebP') {
+        $workers = $CpuWorkers
+        Write-Host "CPU WebP: FFmpeg libwebp / compression_level 6 / $workers 並列" -ForegroundColor Cyan
+    } else {
+        Write-Host 'Hybrid AVIF: NVENC preset p7 / yuv420p + avifenc -s 6 -j 1' -ForegroundColor Cyan
+        Write-Host "  GPU $GpuWorkers プロセス / CPU本変換 $CpuWorkers プロセス / CPU品質探索 $selectedCpuProbeWorkers"
+        Write-Host 'GPU障害時はCPUで再試行します。元ファイルは保持します。'
+    }
     $encoder = $null
     $decoder = $null
     # If both v100 and v100b are dropped together, both normalize to v100.cbz.
@@ -945,8 +975,8 @@ function Invoke-MangaBatch {
             '入力準備' = [TimeSpan]::Zero
             '展開・EPUB抽出' = [TimeSpan]::Zero
             '品質探索' = [TimeSpan]::Zero
-            'AVIF本変換' = [TimeSpan]::Zero
-            'AVIFデコード検証' = [TimeSpan]::Zero
+            "${EncodingFormat}本変換" = [TimeSpan]::Zero
+            "${EncodingFormat}デコード検証" = [TimeSpan]::Zero
             'CBZ書込・コピー' = [TimeSpan]::Zero
             'CBZ検証・保存' = [TimeSpan]::Zero
         }
@@ -966,9 +996,9 @@ function Invoke-MangaBatch {
 
             Write-MangaStage -Name $outputName -Stage "入力解析"
             $inputBytes = Get-InputSizeBytes -Item $item
-            $shouldCompress = $inputBytes -gt $CopyThresholdBytes
+            $shouldCompress = $EncodingFormat -eq 'WebP' -or $inputBytes -gt $CopyThresholdBytes
             Write-Host ('元の容量: {0:N1} MB → {1}' -f ($inputBytes / 1MB), `
-                $(if ($shouldCompress) { '自動AVIF変換' } else { '変換なし' }))
+                $(if ($shouldCompress) { "自動${EncodingFormat}変換" } else { '変換なし' }))
 
             # 60MB以下のCBZは中身・ZIP構造を一切変更せず、完成先に原本をコピー。
             if (-not $shouldCompress -and -not $item.IsDirectory -and $item.FullName.ToLowerInvariant().EndsWith('.cbz')) {
@@ -1053,8 +1083,8 @@ function Invoke-MangaBatch {
             # 無駄な変換を避けるため、出力名の衝突を先に確認する。
             foreach ($img in $images) {
                 $ext = $img.Extension.ToLowerInvariant()
-                $name = if ($shouldCompress -and $ext -in @('.jpg', '.jpeg', '.png', '.webp')) {
-                    [IO.Path]::GetFileNameWithoutExtension($img.Name) + '.avif'
+                $name = if ($shouldCompress -and ($EncodingFormat -eq 'WebP' -or $ext -in @('.jpg', '.jpeg', '.png', '.webp'))) {
+                    [IO.Path]::GetFileNameWithoutExtension($img.Name) + '.' + $EncodingFormat.ToLowerInvariant()
                 } else { $img.Name }
                 if (-not $entryNames.Add($name)) {
                     throw "CBZ内の画像名が重複します: $name（元ファイル名を確認してください）"
@@ -1066,9 +1096,9 @@ function Invoke-MangaBatch {
             foreach ($img in $images) {
                 $originalBytes += [long]$img.Length
                 $extension = $img.Extension.ToLowerInvariant()
-                $needsConversion = $shouldCompress -and $extension -in @('.jpg', '.jpeg', '.png', '.webp')
+                $needsConversion = $shouldCompress -and ($EncodingFormat -eq 'WebP' -or $extension -in @('.jpg', '.jpeg', '.png', '.webp'))
                 $entryName = if ($needsConversion) {
-                    [IO.Path]::GetFileNameWithoutExtension($img.Name) + '.avif'
+                    [IO.Path]::GetFileNameWithoutExtension($img.Name) + '.' + $EncodingFormat.ToLowerInvariant()
                 } else { $img.Name }
                 $entries.Add([pscustomobject]@{
                     SourcePath      = $img.FullName
@@ -1091,11 +1121,14 @@ function Invoke-MangaBatch {
                 if (@($entries | Where-Object { $_.NeedsConversion }).Count -gt 0) {
                     $originalEntries = Copy-VolumeEntries -Entries $entries
                     if ($null -eq $encoder) {
-                        $encoder = Find-FFmpegNvenc
-                        $script:CpuEncoder = Find-OrInstall-Avifenc
-                        [void](Test-HybridAvifenc -Path $script:CpuEncoder)
+                        if ($EncodingFormat -eq 'WebP') { $encoder = Find-WebPFFmpeg }
+                        else {
+                            $encoder = Find-FFmpegNvenc
+                            $script:CpuEncoder = Find-OrInstall-Avifenc
+                            [void](Test-HybridAvifenc -Path $script:CpuEncoder)
+                        }
                     }
-                    if ($null -eq $decoder -and @($entries | Where-Object {
+                    if ($EncodingFormat -ne 'WebP' -and $null -eq $decoder -and @($entries | Where-Object {
                         $_.NeedsConversion -and $_.Extension -eq '.webp'
                     }).Count -gt 0) {
                         $decoder = Find-OrInstall-Dwebp
@@ -1107,7 +1140,8 @@ function Invoke-MangaBatch {
                     $entries = $auto.Entries
                     $converted = $auto.Converted
                     $winningQuality = $auto.Quality
-                    $formatLabel = "Hybrid AVIF GPU Q$winningQuality (CQ$(Convert-GpuQualityToCq -Quality $winningQuality)) / CPU q$script:HybridCpuQuality"
+                    $formatLabel = if ($EncodingFormat -eq 'WebP') { "CPU WebP 品質$winningQuality" }
+                        else { "Hybrid AVIF GPU Q$winningQuality (CQ$(Convert-GpuQualityToCq -Quality $winningQuality)) / CPU q$script:HybridCpuQuality" }
                     if (-not $auto.UnderLimit) {
                         Write-Warning ('70MiB以内に収まりませんでした: Q{0} / 約{1:N1} MiB' -f `
                             $winningQuality, ($auto.Bytes / 1MB))
@@ -1118,6 +1152,13 @@ function Invoke-MangaBatch {
                 }
             }
 
+            if ($EncodingFormat -eq 'WebP') {
+                Write-MangaStage -Name $outputName -Stage 'WebP全ページデコード検証'
+                $verifyTimer=[Diagnostics.Stopwatch]::StartNew()
+                try {
+                    Invoke-WebPVerify -Entries $entries.ToArray() -Encoder $encoder -CancelFile $CancelFile -TimeoutSeconds $EncoderTimeoutSeconds
+                } finally { $verifyTimer.Stop(); $stageTimes['WebPデコード検証'] += $verifyTimer.Elapsed }
+            } else {
             $verifyTimer=[Diagnostics.Stopwatch]::StartNew()
                 try {
                     $avifs=@($entries | Where-Object { [IO.Path]::GetExtension($_.SourcePath) -eq '.avif' })
@@ -1161,6 +1202,7 @@ function Invoke-MangaBatch {
                         }
                     }
                 } finally { $verifyTimer.Stop(); $stageTimes['AVIFデコード検証'] += $verifyTimer.Elapsed }
+            }
             Write-MangaStage -Name $outputName -Stage "CBZ書き込み"
             $writeTimer = [System.Diagnostics.Stopwatch]::StartNew()
             try { Write-MangaStoredZip -Path $tempCbz -Entries $entries }
@@ -1227,10 +1269,10 @@ function Invoke-MangaBatch {
                 Write-MangaTimingReport -Name $outputName -Stages $stageTimes -Total $volumeTimer.Elapsed
                 $stageSeconds=[ordered]@{}
                     foreach ($key in $stageTimes.Keys) { $stageSeconds[$key]=$stageTimes[$key].TotalSeconds }
-                    $report=[ordered]@{ Mode='Hybrid'; Status=$reportStatus; Input=$item.FullName;
+                    $report=[ordered]@{ Mode=$(if ($EncodingFormat -eq 'WebP') {'WebP'} else {'Hybrid'}); EncodingFormat=$EncodingFormat; Status=$reportStatus; Input=$item.FullName;
                         Output=$output; TotalSeconds=$volumeTimer.Elapsed.TotalSeconds; FinalBytes=$finalBytes;
-                        GpuWorkers=$GpuWorkers; CpuWorkers=$CpuWorkers; CpuProbeWorkers=$selectedCpuProbeWorkers;
-                        GpuQuality=$winningQuality; CpuQuality=$script:HybridCpuQuality;
+                        GpuWorkers=$(if ($EncodingFormat -eq 'WebP') {0} else {$GpuWorkers}); CpuWorkers=$CpuWorkers; CpuProbeWorkers=$(if ($EncodingFormat -eq 'WebP') {0} else {$selectedCpuProbeWorkers});
+                        GpuQuality=$(if ($EncodingFormat -eq 'WebP') {0} else {$winningQuality}); CpuQuality=$(if ($EncodingFormat -eq 'WebP') {$winningQuality} else {$script:HybridCpuQuality});
                         SizeRetries=[Math]::Max(0,@($script:EncodePasses | Where-Object { $_.Phase -eq 'Full' }).Count-1);
                         Stages=$stageSeconds; Passes=@($script:EncodePasses.ToArray()) }
                     $metricsDir=if ($ReportDirectory) { $ReportDirectory } else { Join-Path $destinationDir 'metrics' }
