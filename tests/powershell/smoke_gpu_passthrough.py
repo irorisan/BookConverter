@@ -32,7 +32,7 @@ def main() -> None:
                 ["pwsh.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
                  "-File", str(ROOT / "scripts" / "Convert-Manga.ps1"),
                  *(["-Magazine"] if mode == "Magazine" else []), str(source)],
-                input=stdin, capture_output=True, text=True, encoding="utf-8",
+                input="1\n" + stdin, capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=120, check=False,
             )
             assert result.returncode == 0, (mode, result.stdout, result.stderr)

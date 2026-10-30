@@ -32,7 +32,7 @@ def main() -> None:
         result = subprocess.run(
             ["pwsh.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
              "-File", str(ROOT / "scripts" / "Convert-Manga.ps1"), str(source)],
-            input="\n\nq\n", capture_output=True, text=True, encoding="utf-8",
+            input="\n\n\nq\n", capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=120, check=False,
         )
         output = root / "avif変換cbz" / "日本語の漫画 v01.cbz"

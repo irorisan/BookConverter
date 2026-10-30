@@ -153,3 +153,12 @@ jobs:
       - name: Validate hybrid AVIF samples and integration on PowerShell 7.6
         shell: pwsh
         run: pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tests/powershell/test-hybrid.ps1
+
+      - name: Validate format selection and CPU WebP integration
+        shell: pwsh
+        run: |
+          pwsh.exe -NoLogo -NoProfile -File tests/powershell/test-encoding.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install imageio-ffmpeg==0.6.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/powershell/smoke_webp.py
