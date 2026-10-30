@@ -1,5 +1,9 @@
 # BookConverter — PowerShell CUI改修計画
 
+起動時のAVIF/WebP選択は [画像形式仕様](./ENCODING_FORMAT.md) を正本とする。
+本書の60MiB無変換とAVIFエンコード設定はAVIF選択時に適用する。
+WebPは全ページをCPU変換して別の `webp変換cbz` に保存する。
+
 > Status: Phase 3・4実装／検証 / 方針更新 2026-10-21  
 > 対象: Windows用の漫画・画像主体EPUBからCBZ/AVIFへ変換する既存ツール  
 > 正本: 本書と [既存挙動の基準・テスト資料](./PHASE0_BASELINE.md)  

@@ -22,6 +22,8 @@ BookConverterの仕様・開発資料の入口です。
 - [Phase 0 — 現行ツールの動作基準化](./PHASE0_BASELINE.md) — 静的に確認した仕様、合成フィクスチャとWindows実機の未確認事項。
 - [AGENTS.md](../AGENTS.md) — Docs First、TDD、最小実装・KISS、最終整合性、PRとCIのルール。
 
+- [起動時の画像形式選択](./ENCODING_FORMAT.md) — AVIF既定、CPU WebP、保存先と検証。
+
 ## 現在の状態
 
 **Phase 1・2はPR #5でマージ済み。Phase 3・4は連続変換と検証を追加**。元のソースは2026-10-20提供のスタンドアロンZIPを基準とし、`avifenc.exe`等の第三者バイナリは含まない。連続変換・検証の仕様と実機手順は [Phase 3・4](./PHASE3_4_CONTINUOUS.md) を参照。

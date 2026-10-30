@@ -1,6 +1,6 @@
 # BookConverter
 
-Windows向けの漫画・雑誌をCBZにまとめるツールです。画像が大きい巻は **GPU＋CPU Hybrid** でAVIFへ変換します。
+Windows向けの漫画・雑誌をCBZにまとめるツールです。起動直後に **1=AVIF（Enterで既定）、2=WebP（CPUのみ）** を選択します。AVIFは従来のGPU＋CPU Hybridで変換します。
 
 ## 使い方
 
@@ -11,14 +11,14 @@ Windows向けの漫画・雑誌をCBZにまとめるツールです。画像が�
 
 ## 動作条件
 
-- Windows、**PowerShell 7.6**、Windows Terminal（`wt.exe`）、AV1 NVENC対応のNVIDIA GPU。
-- `ffmpeg.exe`（GPU NVENC・AVIFエンコード用、`tools/` またはPATH）、CPUエンコード用`avifenc.exe`、**CPU AVIF検証用`avifdec.exe`**（libavif公式版、必要時に自動取得）。WebP入力には`dwebp.exe`、RAR展開にはWinRARが必要です。FFmpegのAVIFデコーダーは使用しません。
+- Windows、**PowerShell 7.6**、Windows Terminal（`wt.exe`）。AVIFはAV1 NVENC対応のNVIDIA GPUが必要です。WebPはGPU不要です。
+- `ffmpeg.exe`（`tools/` またはPATH）。WebP選択時は`libwebp`対応ビルドを使用します。AVIF選択時はNVENC対応ビルド、CPUエンコード用`avifenc.exe`、**CPU AVIF検証用`avifdec.exe`**（libavif公式版、必要時に自動取得）が必要です。AVIF選択でWebPを入力すると`dwebp.exe`も使います。RAR展開にはWinRARが必要です。
 - Hybridの既定は **GPU 12並列＋CPU 4並列**。品質探索はGPU主体（CPU代表ページ校正）で、自動調整します。
 
 ## 保存ルール
 
-- 60MiB以下のCBZはそのままコピー。60MiB超では必要に応じてAVIFに変換し、完成CBZを**70MiB以下**に収めます。収まらなければ保存しません。
-- 出力先は入力元の親フォルダの`avif変換cbz/`です。**原本・既存の同名出力は削除・上書きしません。**
+- AVIFは60MiB以下のCBZをそのままコピーし、60MiB超では必要に応じて変換します。WebPは60MiB以下や既存AVIFもCPUでWebPへ変換します。両方式とも完成CBZを**70MiB以下**に収め、収まらなければ保存しません。
+- 出力先は入力元の親フォルダの`avif変換cbz/`または`webp変換cbz/`です。**原本・既存の同名出力は削除・上書きしません。** 詳細は[画像形式仕様](DOCS/ENCODING_FORMAT.md)。
 
 ## その他
 
