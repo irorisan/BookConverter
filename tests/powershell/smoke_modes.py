@@ -20,7 +20,7 @@ def run_bat(entry: str, data: str, *paths: Path) -> str:
             ["pwsh.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
              "-File", str(ROOT / "scripts" / "Convert-Manga.ps1"),
              *(["-Magazine"] if "Magazine" in entry else []), *map(str, paths)],
-            input=data, capture_output=True, text=True, encoding="utf-8",
+            input="\n" + data, capture_output=True, text=True, encoding="utf-8",
             errors="strict", timeout=120, check=False, env=env,
         )
         assert not list(Path(temp).glob("MangaCbz_*")), "Work directory remains"

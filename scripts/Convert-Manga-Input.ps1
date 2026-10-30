@@ -38,3 +38,15 @@ function Read-MangaResponse {
     }
     return (Read-Host $Prompt)
 }
+
+function Read-MangaEncodingFormat {
+    Write-Host 'エンコード形式を選択してください' -ForegroundColor Cyan
+    Write-Host '  1. AVIF（GPU + CPU Hybrid）[デフォルト]'
+    Write-Host '  2. WebP（CPUのみ）'
+    while ($true) {
+        $response = Read-MangaResponse '選択 [1/2]（Enterで1）'
+        if ($null -eq $response -or $response.Trim() -in @('', '1')) { return 'AVIF' }
+        if ($response.Trim() -eq '2') { return 'WebP' }
+        Write-Host '1 または 2 を入力してください。' -ForegroundColor Yellow
+    }
+}
